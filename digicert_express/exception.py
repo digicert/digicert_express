@@ -1,8 +1,10 @@
-#import config
+# import config
+
 
 class DigicertResponseException(Exception):
-	pass
+    pass
+
 
 class BadRequestException(Exception):
-	pass
+    pass
 
