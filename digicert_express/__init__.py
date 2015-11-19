@@ -2,8 +2,10 @@ import getpass
 import config
 import sys
 from request import Request
+import loggers
 
 def main():
+	logger = loggers.get_logger(__name__)
 	# check if the certificate was supplied on the command line
 	try:
 		if not config.API_KEY:
@@ -12,7 +14,9 @@ def main():
 		print ex.message
 
 def request_login():
+	logger = loggers.get_logger(__name__)
 	# do you have a DigiCert api key? <y>
+	logger.info("Please login to continue.")
 	username = raw_input("DigiCert Username: ")
 	password = getpass.getpass("DigiCert Password: ")
 

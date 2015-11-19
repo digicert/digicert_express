@@ -1,21 +1,33 @@
 import logging
+import os
 
-class ExpressInstallLogger(object):
-    def __init__(self, log_path=".", file_name="digicert_express.log"):
-        logFormatter = logging.Formatter("%(asctime)s [%(levelname)-5.5s]  %(message)s")
-        self.log = logging.getLogger()
+def get_logger(module_name, log_path='./'):
+    logger = logging.getLogger(module_name)
+    logger.setLevel(logging.DEBUG)
 
-        consoleHandler = logging.StreamHandler()
-        self.log.addHandler(consoleHandler)
+    # create console handler and set level to info
+    # TODO switch stream handler back to .INFO before release
+    handler = logging.StreamHandler()
+    handler.setLevel(logging.DEBUG)
+    formatter = ExpressFormatter()
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
 
-        try:
-            fileHandler = logging.FileHandler("{0}/{1}".format(log_path, file_name))
-            fileHandler.setFormatter(logFormatter)
-            self.log.addHandler(fileHandler)
-        except IOError:
-            pass
+    # create debug file handler and set level to debug
+    handler = logging.FileHandler(os.path.join(log_path, "ei_debug.log"), "w")
+    handler.setLevel(logging.DEBUG)
+    formatter = logging.Formatter("%(levelname)s - %(message)s")
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
 
-        self.log.setLevel(logging.DEBUG)
+    return logger
 
-    def get_logger(self):
-        return self.log
+class ExpressFormatter(logging.Formatter):
+    default_fmt = logging.Formatter('[%(levelname)s] %(name)s: %(message)s')
+    info_fmt = logging.Formatter('%(message)s')
+
+    def format(self, record):
+        if record.levelno == logging.INFO:
+            return self.info_fmt.format(record)
+        else:
+            return self.default_fmt.format(record)
