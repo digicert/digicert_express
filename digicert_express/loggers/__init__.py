@@ -2,23 +2,26 @@ import logging
 import os
 
 def get_logger(module_name, log_path='./'):
+    root_logger = logging.getLogger()
+    # Make sure the root logger doesn't already have handlers
+    if not len(root_logger.handlers):
+        # create console handler and set level to info
+        # TODO switch stream handler back to .INFO before release
+        handler = logging.StreamHandler()
+        handler.setLevel(logging.DEBUG)
+        formatter = ExpressFormatter()
+        handler.setFormatter(formatter)
+        root_logger.addHandler(handler)
+
+        # create debug file handler and set level to debug
+        handler = logging.FileHandler(os.path.join(log_path, "ei_debug.log"), "w")
+        handler.setLevel(logging.DEBUG)
+        formatter = logging.Formatter("%(levelname)s - %(message)s")
+        handler.setFormatter(formatter)
+        root_logger.addHandler(handler)
+
     logger = logging.getLogger(module_name)
     logger.setLevel(logging.DEBUG)
-
-    # create console handler and set level to info
-    # TODO switch stream handler back to .INFO before release
-    handler = logging.StreamHandler()
-    handler.setLevel(logging.DEBUG)
-    formatter = ExpressFormatter()
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
-
-    # create debug file handler and set level to debug
-    handler = logging.FileHandler(os.path.join(log_path, "ei_debug.log"), "w")
-    handler.setLevel(logging.DEBUG)
-    formatter = logging.Formatter("%(levelname)s - %(message)s")
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
 
     return logger
 

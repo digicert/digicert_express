@@ -1,5 +1,7 @@
 import config
 import requests
+import loggers
+from requests.exceptions import ConnectionError
 
 
 class Request(object):
@@ -11,19 +13,33 @@ class Request(object):
         if api_key:
             self._api_key = api_key
             self._headers['X-DC-DEVKEY'] = self._api_key
+        if not api_key and config.API_KEY:
+            self._api_key = config.API_KEY
+            self._headers['X-DC-DEVKEY'] = self._api_key
+        self.log = loggers.get_logger(__name__)
 
     # /order/certificate/<order_id>
     def get(self, endpoint, **kwargs):
-        pass
+        try:
+            url = "{0}{1}".format(config.SERVICES_URL, endpoint)
+            r = requests.get(url, headers=self._headers)
+            return Response(r)
+        except ConnectionError as ex:
+            self.log.error("Failed processing request on endpoint {0} with message {1}".format(endpoint, ex.message))
+            return ErrorResponse(ex)
 
     def put(self, endpoint, **kwargs):
         pass
 
     # /user/tempkey {'username': username, 'current_password': password}
     def post(self, endpoint, params):
-        url = "{0}{1}".format(config.SERVICES_URL, endpoint)
-        r = requests.post(url, json=params, headers=self._headers)
-        return Response(r)
+        try:
+            url = "{0}{1}".format(config.SERVICES_URL, endpoint)
+            r = requests.post(url, json=params, headers=self._headers)
+            return Response(r)
+        except ConnectionError as ex:
+            self.log.error("Failed processing request on endpoint {0} with message {1}".format(endpoint, ex.message))
+            return ErrorResponse(ex)
 
     def delete(self, endpoint, **kwargs):
         pass
@@ -54,3 +70,17 @@ class Response(object):
         if self.internal_message:
             return self.internal_message
         return "Bad request! Status: {0}, Reason: {1}".format(self.status_code, self.reason)
+
+    def is_response_error(self):
+        return False
+
+class ErrorResponse(Response):
+    exception = None
+
+    def __init__(self, ex):
+        self.has_error = True
+        self.exception = ex
+        self.internal_message = ex.message
+
+    def is_response_error(self):
+        return True
