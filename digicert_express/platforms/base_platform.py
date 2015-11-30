@@ -1,6 +1,7 @@
 import os
 import loggers
 
+# This class defaults to Debian values
 class BasePlatform():
     APACHE_SERVICE = 'apache2ctl'
     DEPS = ['augeas-lenses', 'augeas-tools', 'libaugeas0', 'openssl', 'python-pip']
