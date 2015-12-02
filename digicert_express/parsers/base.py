@@ -99,7 +99,7 @@ class BaseParser(object):
                 error_msg = "{0}\t{1}\n".format(error_msg, error)
             raise Exception(error_msg)
 
-    def get_vhosts_on_server(self):
+    def get_vhosts_on_server(self, dns_names=None):
         """ Use this method to search for all virtual hosts configured on the web server """
         self.logger.info("Getting vhosts on server")
         server_virtual_hosts = []
@@ -110,14 +110,14 @@ class BaseParser(object):
                 vhosts = self.aug.match("{0}/*[label()=~regexp('{1}')]".format(host_file, utils.create_regex("VirtualHost")))
                 vhosts += self.aug.match("{0}/*/*[label()=~regexp('{1}/arg')]".format(host_file, utils.create_regex("VirtualHost")))
 
-                vhost = self._get_vhosts_domain_name(vhosts, '443')
+                vhost = self._get_vhosts_domain_name(vhosts, '443', dns_names)
                 if not vhost:
-                    vhost = self._get_vhosts_domain_name(vhosts, '80')
+                    vhost = self._get_vhosts_domain_name(vhosts, '80', dns_names)
                 if vhost:
                     server_virtual_hosts.extend(vhost)
         return server_virtual_hosts
 
-    def _get_vhosts_domain_name(self, vhosts, port):
+    def _get_vhosts_domain_name(self, vhosts, port, dns_names):
         found_domains = []
         for vhost in vhosts:
             check_matches = self.aug.match("{0}/*[self::directive=~regexp('{1}')]".format(vhost, utils.create_regex("ServerName")))
@@ -125,5 +125,6 @@ class BaseParser(object):
                 for check in check_matches:
                     if self.aug.get(check + "/arg"):
                         aug_domain = self.aug.get(check + "/arg")
-                        found_domains.append(aug_domain)
+                        if dns_names and aug_domain in dns_names:  # TODO This does not work for wildcards yet...
+                            found_domains.append(aug_domain)
         return found_domains

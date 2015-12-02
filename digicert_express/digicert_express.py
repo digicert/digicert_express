@@ -4,7 +4,6 @@ import sys
 from request import Request
 import loggers
 import argparse
-import augeas
 import utils
 from parsers import base as base_parser
 from platforms import centos_platform, ubuntu_platform
@@ -13,6 +12,7 @@ def main():
     # accept arguments
     parser = argparse.ArgumentParser(description='Download your certificate and secure your domain in one step')
     parser.add_argument("--order_id", action="store", help="DigiCert order ID for certificate")
+    parser.add_argument("--cert_path", action="store", help="the path to the certificate file")
     parser.add_argument("--domain", action="store", help="Domain name to secure")
     parser.add_argument("--key", action="store", help="Path to private key file used to order certificate")
     parser.add_argument("--api_key", action="store", help="Skip authentication step with a DigiCert API key")
@@ -21,10 +21,13 @@ def main():
 
     args = parser.parse_args()
 
-    # user tried to manually pass a domain name without an order id. No workie.
-    if not args.order_id and args.domain:
-        raise Exception("You cannot use this tool this way. Please visit the website and download an installer from your order details page.")
+    order_id = args.order_id
+    domain = args.domain
+    if args.api_key:
+        config.API_KEY = args.api_key
+    cert_path = args.cert_path
 
+    # get platform class and check platform level dependencies
     platform = None
     dist = utils.determine_platform()
     if dist[0] == "CentOS":
@@ -32,38 +35,52 @@ def main():
     else:
         platform = ubuntu_platform.UbuntuPlatform()
 
-    vhost = None
-    order_id = None
+    ignored_packages = platform.check_dependencies()
+    if ignored_packages:
+        raise Exception("You will need to install these packages before continuing: {0}".format(",".join(ignored_packages)))
 
-    # user ran the installer without a bundled cert or not from the shell script
-    if not args.domain and not args.order_id:
-        try:
-            aug = base_parser.BaseParser(platform=platform)
-            hosts = aug.get_vhosts_on_server()
-            vhost = select_vhost(hosts)
-        except Exception as ex:
-            print ex
-            sys.exit()
+    # user tried to manually pass a domain name without an order id. No workie.
+    if not order_id and domain:
+        raise Exception("You cannot use this tool this way. Please visit the website and download an installer from your order details page.")
 
-    # user ran the installer with a bundled cert or from the shell script or is just smart.
-    if args.domain and args.order_id:
-        aug = base_parser.BaseParser(platform=platform)
-        hosts = aug.get_vhosts_on_server()
-        if args.domain not in hosts:
-            raise Exception("Could not find an unsecured host for {0}, please add an insecure host for us to modify and try again".format(args.domain))
-        vhost = args.domain
-        order_id = args.order_id
-        pass
+    # get the dns names from the cert if one was passed in
+    dns_names = utils.get_dns_names_from_cert(cert_path) if cert_path else None
+    print dns_names
+    if domain and not dns_names:
+        dns_names = [domain]
 
+    # user manually passed the order id and no dns names were found
+    if order_id and not dns_names:
+        order = get_order(order_id)
+        if len(order['certificate']['dns_names']) > 1:
+            dns_names = order['certificate']['dns_names']
+        else:
+            dns_names = [order['certificate']['common_name']]
+
+    aug = base_parser.BaseParser(platform=platform)
+    hosts = aug.get_vhosts_on_server(dns_names)
+
+    if not hosts:
+        raise Exception("No virtual hosts were found on this server that will work with your certificate")
+
+    if len(hosts) > 1:
+        vhost = select_vhost(hosts)
+    else:
+        if raw_input("The host {0} was found matching this certificate. Is this correct? (Y/n) ".format(hosts[0])).lower().strip() != "y":
+            raise Exception("No virtual hosts were found on this server that will work with your certificate")
+        vhost = hosts[0]
+
+    if args.allow_dups:
+        if raw_input("Are you trying to install a duplicate certificate? (Y/n) ") == 'y':
+            process_duplicate()
     # try to find files matching this domain in /etc/digicert
-    # if found, install them
+    # if found, ask to install them
 
     # otherwise, we need to log in and try to find an order matching this domain
+    print "order id {0}".format(order_id)
+    print "vhost {0}".format(vhost)
+    print "Into the black water"
     try:
-        if args.api_key:
-            config.API_KEY = args.api_key
-        if not config.API_KEY:
-            config.API_KEY = request_login()
         if order_id:
             order = get_order(order_id)
         else:
@@ -72,6 +89,7 @@ def main():
                 # We could push them to order here :p
                 raise Exception("No orders found matching that criteria")
             order = select_order(orders)
+            order_id = order['id']
         print order
     except Exception as ex:
         print ex
@@ -85,6 +103,7 @@ def main():
 
 def get_issued_orders(domain_filter=None):
     logger = loggers.get_logger(__name__)
+    check_credential()
     filters = '?filters[status]=issued'
     r = Request().get('/order/certificate{0}'.format(filters))
     if r.has_error:
@@ -107,6 +126,7 @@ def get_issued_orders(domain_filter=None):
 
 def get_order(order_id):
     logger = loggers.get_logger(__name__)
+    check_credential()
     r = Request().get('/order/certificate/{0}'.format(order_id))
     if r.has_error:
         # This is an unrecoverable error. We can't see the API for some reason
@@ -178,6 +198,10 @@ def select_order(orders):
 def do_everything_with_args(order_id='', domain='', api_key='', key=''):
     raw_input("I'll attempt to secure virtual hosts configured on this web server with an SSL certificate.  Press ENTER to continue.")
     print ''
+
+def check_credential():
+    if not config.API_KEY:
+        config.API_KEY = request_login()
 
 def request_login():
     logger = loggers.get_logger(__name__)

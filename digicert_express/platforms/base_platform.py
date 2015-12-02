@@ -1,5 +1,6 @@
 import os
 import loggers
+import config
 
 # This class defaults to Debian values
 class BasePlatform():
@@ -30,3 +31,28 @@ class BasePlatform():
 
             if os.path.exists(server_config_file):
                 return server_config_file
+
+    def check_dependencies(self):
+        logger = loggers.get_logger(__name__)
+        try:
+            logger.info("Checking for required dependencies")
+            import apt
+            a = apt.cache.Cache(memonly=True)
+
+            installed_packages = []
+            ignored_packages = []
+            for package_name in self.DEPS:
+                if a[package_name].is_installed:
+                    continue
+                else:
+                    if raw_input('Install: {0} (Y/n) '.format(package_name)).lower().strip() == 'n':
+                        ignored_packages.append(package_name)
+                        continue
+                    else:
+                        logger.info("Installing package {0}...".format(package_name))
+                        os.system('apt-get -y install {0} &>> {1}'.format(a[package_name].name, config.LOG_FILE))
+                        installed_packages.append(package_name)
+                        continue
+            return ignored_packages
+        except ImportError:
+            pass
