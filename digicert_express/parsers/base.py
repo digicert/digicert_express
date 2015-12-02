@@ -127,4 +127,9 @@ class BaseParser(object):
                         aug_domain = self.aug.get(check + "/arg")
                         if dns_names and aug_domain in dns_names:  # TODO This does not work for wildcards yet...
                             found_domains.append(aug_domain)
+                        else:   # Check for wildcard matches
+                            for dns_name in dns_names:  # For *.example.com, the vhost ends with .example.com or equals example.com
+                                if (dns_name[:2] == '*.') and (dns_name[1:] == aug_domain[1-len(dns_name):] or dns_name[2:] == aug_domain):
+                                    found_domains.append(aug_domain)
+                                    break
         return found_domains
