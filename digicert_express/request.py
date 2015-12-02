@@ -19,17 +19,24 @@ class Request(object):
         self.log = loggers.get_logger(__name__)
 
     # /order/certificate/<order_id>
-    def get(self, endpoint, **kwargs):
+    def get(self, endpoint, params=None):
         try:
+            # TODO add params to GET query string (aka url)
             url = "{0}{1}".format(config.SERVICES_URL, endpoint)
             r = requests.get(url, headers=self._headers)
             return Response(r)
         except ConnectionError as ex:
-            self.log.error("Failed processing request on endpoint {0} with message {1}".format(endpoint, ex.message))
+            self.log.error("Failed processing [GET] request on endpoint {0} with message {1}".format(endpoint, ex.message))
             return ErrorResponse(ex)
 
-    def put(self, endpoint, **kwargs):
-        pass
+    def put(self, endpoint, params):
+        try:
+            url = "{0}{1}".format(config.SERVICES_URL, endpoint)
+            r = requests.put(url, json=params, headers=self._headers)
+            return Response(r)
+        except ConnectionError as ex:
+            self.log.error("Failed processing [PUT] request on endpoint {0} with message {1}".format(endpoint, ex.message))
+            return ErrorResponse(ex)
 
     # /user/tempkey {'username': username, 'current_password': password}
     def post(self, endpoint, params):
@@ -38,7 +45,7 @@ class Request(object):
             r = requests.post(url, json=params, headers=self._headers)
             return Response(r)
         except ConnectionError as ex:
-            self.log.error("Failed processing request on endpoint {0} with message {1}".format(endpoint, ex.message))
+            self.log.error("Failed processing [POST] request on endpoint {0} with message {1}".format(endpoint, ex.message))
             return ErrorResponse(ex)
 
     def delete(self, endpoint, **kwargs):

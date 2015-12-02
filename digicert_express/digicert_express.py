@@ -3,6 +3,7 @@ import config
 import sys
 from request import Request
 import loggers
+import json
 import argparse
 import utils
 from parsers import base as base_parser
@@ -29,6 +30,7 @@ def main():
 
     # get platform class and check platform level dependencies
     platform = None
+    # TODO maybe have determine_platform return the platform object instead of doing it this way.
     dist = utils.determine_platform()
     if dist[0] == "CentOS":
         platform = centos_platform.CentosPlatform()
@@ -44,13 +46,13 @@ def main():
         raise Exception("You cannot use this tool this way. Please visit the website and download an installer from your order details page.")
 
     # get the dns names from the cert if one was passed in
-    dns_names = utils.get_dns_names_from_cert(cert_path) if cert_path else None
-    print dns_names
-    if domain and not dns_names:
-        dns_names = [domain]
+    dns_names = utils.get_dns_names_from_cert(cert_path)
+
+    order = None
 
     # user manually passed the order id and no dns names were found
     if order_id and not dns_names:
+        cert_path = None  # the cert_path was invalid
         order = get_order(order_id)
         if len(order['certificate']['dns_names']) > 1:
             dns_names = order['certificate']['dns_names']
@@ -70,36 +72,90 @@ def main():
             raise Exception("No virtual hosts were found on this server that will work with your certificate")
         vhost = hosts[0]
 
-    if args.allow_dups:
-        if raw_input("Are you trying to install a duplicate certificate? (Y/n) ") == 'y':
-            process_duplicate()
-    # try to find files matching this domain in /etc/digicert
-    # if found, ask to install them
-
-    # otherwise, we need to log in and try to find an order matching this domain
-    print "order id {0}".format(order_id)
-    print "vhost {0}".format(vhost)
-    print "Into the black water"
-    try:
-        if order_id:
-            order = get_order(order_id)
+    # We should only go through this if block when the script is run without an order_id and cert_path
+    if not dns_names:
+        orders = get_issued_orders(vhost)
+        if not orders:
+            # We could push them to order here :p
+            raise Exception("No orders found matching that criteria")
+        order = select_order(orders)
+        if len(order['certificate']['dns_names']) > 1:
+            dns_names = order['certificate']['dns_names']
         else:
-            orders = get_issued_orders(vhost)
-            if not orders:
-                # We could push them to order here :p
-                raise Exception("No orders found matching that criteria")
-            order = select_order(orders)
-            order_id = order['id']
-        print order
-    except Exception as ex:
-        print ex
-        sys.exit()
-    # download certificate, copy files to the right folder
+            dns_names = [order['certificate']['common_name']]
+        order_id = order['id']
 
-    # Look for existing certificate/chain/key
-    # if they are not found, see if an API key exists in config.py
-    # if an API key does not exist, log in to get a temporary api key to use for this session
-    # if we got here, then we got an api key, get a list of orders
+    if order and order['status'] == 'needs_csr':
+        private_key_file, csr_file = utils.create_csr(dns_name=vhost, order=order)
+        upload_csr(order_id, csr_file)
+        order = get_order(order_id)
+        if order['status'] == 'issued':
+            pass  # download cert
+
+    if not private_key_file:
+        # go and find the private key
+        # if not found...
+        if args.allow_dups:
+            if raw_input("Are you trying to install a duplicate certificate? (Y/n) ") == 'y':
+                order = get_order(order_id) if not order else order
+                private_key_file, csr_file = utils.create_csr(dns_name=vhost, order=order)
+                dup_data = create_duplicate(order=order, csr_file=csr_file)
+                if not dup_data['sub_id']:
+                    raise Exception("DOH")
+        # require a file path to the private key
+
+    if not cert_path:
+        # go and find the certificate file
+        # if not found and we have an order_id, ask if they want to download the certificate
+        # if they don't, require a file path to the cert file
+        # if they do, download it and copy the files to the right folder
+        pass
+
+    if cert_path and private_key_file:
+        # validate the private key is for the certificate we have
+        # if they don't match, exception
+        # if they match, copy them to the right place with the intermediate
+        pass
+
+
+# TODO consider moving API request calls to their own file (api.py maybe?)
+def create_duplicate(order, csr_file):
+    logger = loggers.get_logger(__name__)
+    csr_text = None
+    with open(csr_file, "r") as f:
+        csr_text = f.read()
+    # TODO consider changing common name to vhost if we need to or can
+    cert_data = {"certificate": {"common_name": order['certificate']['common_name'], "csr": csr_text, "signature_hash": order['certificate']['signature_hash'], "server_platform": {"id": 2}, "dns_names": order['certificate']['dns_names']}}
+    logger.debug("Submitting request for duplicate on order #{0} with data {1}".format(order['id'], json.dumps(cert_data)))
+    r = Request().post('/order/{0}/duplicate'.format(order['id']), cert_data)
+    if r.has_error:
+        # This is an unrecoverable error. We can't see the API for some reason
+        if r.is_response_error():
+            logger.error('Server request failed. Unable to access API.')
+            sys.exit()
+        else:
+            logger.error("Server returned an error condition: {0}".format(r.get_message()))
+            sys.exit()
+    logger.debug("Duplicate request succeeded with response {0}".format(json.dumps(r.data)))
+    return r.data
+
+def upload_csr(order_id, csr_file):
+    logger = loggers.get_logger(__name__)
+    check_credential()
+    csr_text = None
+    logger.debug("Reading CSR from file at {0}".format(csr_file))
+    with open(csr_file, "r") as f:
+        csr_text = f.read()
+    r = Request().post('/order/{0}/csr', {'csr': csr_text})
+    if r.has_error:
+        # This is an unrecoverable error. We can't see the API for some reason
+        if r.is_response_error():
+            logger.error('Server request failed. Unable to access API.')
+            sys.exit()
+        else:
+            logger.error("Server returned an error condition: {0}".format(r.get_message()))
+            sys.exit()
+    logger.info("Updated CSR on order #{0}".format(order_id))
 
 def get_issued_orders(domain_filter=None):
     logger = loggers.get_logger(__name__)
@@ -161,7 +217,7 @@ def select_vhost(hosts):
                     print ""
         return hosts[int(response)-1]
     elif hosts and len(hosts) == 1:
-        if raw_input("Continue with vhost {0}? (Y/n)".format(hosts[0])) == 'n':
+        if raw_input("Continue with vhost {0}? (Y/n) ".format(hosts[0])) == 'n':
             raise Exception("User canceled; aborting.")
         return hosts[0]
     else:
@@ -189,7 +245,7 @@ def select_order(orders):
                     print ""
         return orders[int(response)-1]
     elif orders and len(orders) == 1:
-        if raw_input("Continue with order #{0} ({1})? (Y/n)".format(orders[0]['id'], orders[0]['certificate']['common_name'])) == 'n':
+        if raw_input("Continue with order #{0} ({1})? (Y/n) ".format(orders[0]['id'], orders[0]['certificate']['common_name'])) == 'n':
             raise Exception("User canceled; aborting.")
         return orders[0]
     else:
@@ -225,8 +281,12 @@ def request_login():
     return r.data["api_key"]
 
 if __name__ == '__main__':
+    logger = loggers.get_logger(__name__)
     try:
         main()
         print 'Finished'
+    except Exception as ex:
+        logger.debug("Expectedly ended operation with message: {0}".format(ex))
+        print ex
     except KeyboardInterrupt:
         print

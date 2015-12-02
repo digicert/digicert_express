@@ -108,7 +108,7 @@ class BaseParser(object):
             host_file = "/files{0}".format(self.aug.get(match))
             if '~previous' not in host_file:
                 vhosts = self.aug.match("{0}/*[label()=~regexp('{1}')]".format(host_file, utils.create_regex("VirtualHost")))
-                vhosts += self.aug.match("{0}/*/*[label()=~regexp('{1}/arg')]".format(host_file, utils.create_regex("VirtualHost")))
+                vhosts += self.aug.match("{0}/*/*[label()=~regexp('{1}')]".format(host_file, utils.create_regex("VirtualHost")))
 
                 vhost = self._get_vhosts_domain_name(vhosts, '443', dns_names)
                 if not vhost:
@@ -119,20 +119,20 @@ class BaseParser(object):
 
     def _get_vhosts_domain_name(self, vhosts, port, dns_names):
         found_domains = []
-        # TODO We are not using the port. Should we?
         for vhost in vhosts:
-            check_matches = self.aug.match("{0}/*[self::directive=~regexp('{1}')]".format(vhost, utils.create_regex("ServerName")))
-            if check_matches:
-                for check in check_matches:
-                    if self.aug.get(check + "/arg"):
-                        aug_domain = self.aug.get(check + "/arg")
-                        if dns_names and aug_domain in dns_names:
-                            found_domains.append(aug_domain)
-                        elif dns_names:   # Check for wildcard matches
-                            for dns_name in dns_names:  # For *.example.com, the vhost ends with .example.com or equals example.com
-                                if (dns_name[:2] == '*.') and (dns_name[1:] == aug_domain[1-len(dns_name):] or dns_name[2:] == aug_domain):
-                                    found_domains.append(aug_domain)
-                                    break
-                        else:   # There is no dns_name filter, return everything.
-                            found_domains.append(aug_domain)
+            if port in self.aug.get(vhost + "/arg"):
+                check_matches = self.aug.match("{0}/*[self::directive=~regexp('{1}')]".format(vhost, utils.create_regex("ServerName")))
+                if check_matches:
+                    for check in check_matches:
+                        if self.aug.get(check + "/arg"):
+                            aug_domain = self.aug.get(check + "/arg")
+                            if dns_names and aug_domain in dns_names:
+                                found_domains.append(aug_domain)
+                            elif dns_names:   # Check for wildcard matches
+                                for dns_name in dns_names:  # For *.example.com, the vhost ends with .example.com or equals example.com
+                                    if (dns_name[:2] == '*.') and (dns_name[1:] == aug_domain[1-len(dns_name):] or dns_name[2:] == aug_domain):
+                                        found_domains.append(aug_domain)
+                                        break
+                            else:   # There is no dns_name filter, return everything.
+                                found_domains.append(aug_domain)
         return found_domains
