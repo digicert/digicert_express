@@ -6,6 +6,7 @@ import loggers
 import json
 import argparse
 import utils
+import os
 from parsers import base as base_parser
 from platforms import centos_platform, ubuntu_platform
 import readline
@@ -94,31 +95,63 @@ def main():
 
     private_key_file = None
     csr_file = None
+    # see if the order needs to have a csr uploaded
     if order and order['status'] == 'needs_csr':
         # TODO do we want to try to find an existing csr?
         private_key_file, csr_file = utils.create_csr(dns_name=vhost, order=order)
         upload_csr(order_id, csr_file)
         order = get_order(order_id)
         if order['status'] == 'issued':
-            pass  # download cert
+            certs = download_certificate(order)  # download cert
+            # write certs to disk
+            # set cert_path
 
     if not private_key_file:
-        print "private key file not found"
-        # go and find the private key
-        # if not found...
+        #private_key_file = locate_pk()
+        pass
+    if not cert_path:
+        #cert_path = locate_cert()
+        pass
+
+    # FIXME this if block and the next one for cert_path need to be designed better
+    if not private_key_file:
         if args.allow_dups or (order and order['allow_duplicates'] == 1):
             print "\033[1mDuplicates require permission to approve requests on this order.\033[0m"
             if raw_input("Are you trying to install a duplicate certificate? (Y/n) ") == 'y':
                 order = get_order(order_id) if not order else order
                 private_key_file, csr_file = utils.create_csr(dns_name=vhost, order=order)
                 dup_data = create_duplicate(order=order, csr_file=csr_file)
-                if not dup_data['sub_id']:
-                    raise Exception("DOH")
-                order['sub_id'] = dup_data['sub_id']
+                if not 'sub_id' in dup_data:
+                    approve_request(dup_data['requests'][0]['id'])
+                    duplicates = get_duplicates(order['id'])
+                    if not duplicates:
+                        raise Exception("Could not collect any duplicates for this order")
+                    order['sub_id'] = duplicates['certificates'][0]['sub_id']
+                else:
+                    order['sub_id'] = dup_data['sub_id']
+                if not order['sub_id']:
+                    raise Exception("Something went wrong")
+                certs = download_certificate(order)
+                # {'certificate': certfile, 'intermediate': DigiCertCA.crt}
+                # write certs to disk
+                # set cert_path
+
+    # this looks awful but it is just checking to make sure that they did not install a duplicate]
+    if not private_key_file:
+        pk_path = None
+        while not private_key_file or pk_path != "q":
+            pk_path = raw_input("please provide the path to the private key for this certificate: (q to quit) ")
+            if pk_path == "q":
+                raise Exception("Cannot install the certificate without a private key file")
+            if not os.path.isfile(pk_path):
+                logger.info("The path {0} is not a valid file. Please try again.")
+                continue
+            private_key_file = pk_path
+
         # require a file path to the private key
 
     if not cert_path:
-        # go and find the certificate file
+        # TODO should we search for an existing one?
         # if not found and we have an order_id, ask if they want to download the certificate
         # if they don't, require a file path to the cert file
         # if they do, download it and copy the files to the right folder
@@ -128,11 +161,74 @@ def main():
         # validate the private key is for the certificate we have
         # if they don't match, exception
         # if they match, copy them to the right place with the intermediate
-        # then install them
+        # install in apache
+        # restart apache
+        # verify that the existing site responds to https afterwards
         pass
 
 
 # TODO consider moving API request calls to their own file (api.py maybe?)
+def download_certificate(order):
+    logger = loggers.get_logger(__name__)
+    check_credential()
+    logger.debug("Downloading certificate")
+    # TODO this distinction shouldn't exist here
+    if 'certificate_id' in order and order['certificate_id']:  # for cert central accounts
+        r = Request(raw_file=True).get('/certificate/{0}/download/format/pem_all'.format(order['id']))
+    else:  # for mpki/retail accounts
+        params = {"format_type": "pem_all"}
+        if 'sub_id' in order and order['sub_id']:
+            params["sub_id"] = order['sub_id']
+        r = Request(raw_file=True).get('/certificate/download/order/{0}'.format(order['id']), params)
+    if r.has_error:
+        # This is an unrecoverable error. We can't see the API for some reason
+        if r.is_response_error():
+            logger.error('Server request failed. Unable to access API.')
+            sys.exit()
+        else:
+            logger.error("Server returned an error condition: {0}".format(r.get_message()))
+            sys.exit()
+    logger.debug("Downloaded certificate for order #{0}".format(order['id']))
+    certs = r.data.split("-----BEGIN")  # 0 - empty, 1 - cert, 2 - intermediate, 3 - root... do we need root?
+    return {
+        "certificate": "-----BEGIN{0}".format(certs[1]),
+        "intermediate": "-----BEGIN{0}".format(certs[2]),
+    }
+
+
+def get_duplicates(order_id):
+    logger = loggers.get_logger(__name__)
+    check_credential()
+    logger.debug("Getting list of duplicates from API")
+    r = Request().get('/order/certificate/{0}/duplicate'.format(order_id))
+    if r.has_error:
+        # This is an unrecoverable error. We can't see the API for some reason
+        if r.is_response_error():
+            logger.error('Server request failed. Unable to access API.')
+            sys.exit()
+        else:
+            logger.error("Server returned an error condition: {0}".format(r.get_message()))
+            sys.exit()
+    logger.debug("Collected {0} duplicates for order_id {1}".format(len(r.data), order_id))
+    return r.data
+
+def approve_request(request_id):
+    logger = loggers.get_logger(__name__)
+    check_credential()
+    data = {"status": "approved", "processor_comment": "Automatically approved by Express Install"}
+    logger.debug("Submitting approval to the API")
+    r = Request().put('/request/{0}/status'.format(request_id), data)
+    if r.has_error:
+        # This is an unrecoverable error. We can't see the API for some reason
+        if r.is_response_error():
+            logger.error('Server request failed. Unable to access API.')
+            sys.exit()
+        else:
+            logger.error("Server returned an error condition: {0}".format(r.get_message()))
+            sys.exit()
+    logger.debug("Approval succeeded with response [{0}] {1}".format(r.status_code, json.dumps(r.data) if r.data else "No response"))
+    return r.data
+
 def create_duplicate(order, csr_file):
     logger = loggers.get_logger(__name__)
     check_credential()

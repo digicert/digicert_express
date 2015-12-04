@@ -1,41 +1,47 @@
+import urllib
 import config
 import requests
 import loggers
 from requests.exceptions import ConnectionError
 
-
 class Request(object):
     _api_key = None
+    _raw_file = False
     # We are only going to work with JSON here, deal with it B)
     _headers = {'Accept': 'application/json', 'Content-Type': 'application/json'}
 
-    def __init__(self, api_key=None, **kwargs):
+    def __init__(self, api_key=None, raw_file=False, **kwargs):
         if api_key:
             self._api_key = api_key
             self._headers['X-DC-DEVKEY'] = self._api_key
         if not api_key and config.API_KEY:
             self._api_key = config.API_KEY
             self._headers['X-DC-DEVKEY'] = self._api_key
-        self.log = loggers.get_logger(__name__)
+        self._log = loggers.get_logger(__name__)
+        self._raw_file = raw_file
 
     # /order/certificate/<order_id>
     def get(self, endpoint, params=None):
         try:
-            # TODO add params to GET query string (aka url)
-            url = "{0}{1}".format(config.SERVICES_URL, endpoint)
-            r = requests.get(url, headers=self._headers)
-            return Response(r)
+            query = ""
+            if isinstance(params, dict):
+                query = urllib.urlencode(params)
+                if query:
+                    query = "?{0}".format(query)
+            url = "{0}{1}{2}".format(config.SERVICES_URL, endpoint, query)
+            r = requests.get(url, headers=self._headers, stream=self._raw_file)
+            return Response(r, raw_file=self._raw_file)
         except ConnectionError as ex:
-            self.log.error("Failed processing [GET] request on endpoint {0} with message {1}".format(endpoint, ex.message))
+            self._log.error("Failed processing [GET] request on endpoint {0} with message {1}".format(endpoint, ex.message))
             return ErrorResponse(ex)
 
     def put(self, endpoint, params):
         try:
             url = "{0}{1}".format(config.SERVICES_URL, endpoint)
             r = requests.put(url, json=params, headers=self._headers)
-            return Response(r)
+            return Response(r, raw_file=self._raw_file)
         except ConnectionError as ex:
-            self.log.error("Failed processing [PUT] request on endpoint {0} with message {1}".format(endpoint, ex.message))
+            self._log.error("Failed processing [PUT] request on endpoint {0} with message {1}".format(endpoint, ex.message))
             return ErrorResponse(ex)
 
     # /user/tempkey {'username': username, 'current_password': password}
@@ -43,9 +49,9 @@ class Request(object):
         try:
             url = "{0}{1}".format(config.SERVICES_URL, endpoint)
             r = requests.post(url, json=params, headers=self._headers)
-            return Response(r)
+            return Response(r, raw_file=self._raw_file)
         except ConnectionError as ex:
-            self.log.error("Failed processing [POST] request on endpoint {0} with message {1}".format(endpoint, ex.message))
+            self._log.error("Failed processing [POST] request on endpoint {0} with message {1}".format(endpoint, ex.message))
             return ErrorResponse(ex)
 
     def delete(self, endpoint, **kwargs):
@@ -59,15 +65,20 @@ class Response(object):
     response = None
     reason = None
     internal_message = None
+    raw = False
     accept_status_codes = []
 
-    def __init__(self, response):
+    def __init__(self, response, raw_file=False):
         self.status_code = response.status_code
         self.reason = response.reason
-        self.data = response.json()
+        if raw_file:
+            self.data = response.raw.read()
+            self.raw = True
+        else:
+            self.data = response.json() if response.text else {}
         self.response = response
         self.check_valid()
-        if self.has_error and 'errors' in self.data:
+        if self.has_error and not self.raw and 'errors' in self.data:
             self.internal_message = self.data['errors'][0]['message']
 
     def check_valid(self):
