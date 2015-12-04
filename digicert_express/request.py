@@ -59,6 +59,7 @@ class Response(object):
     response = None
     reason = None
     internal_message = None
+    accept_status_codes = []
 
     def __init__(self, response):
         self.status_code = response.status_code
@@ -70,7 +71,7 @@ class Response(object):
             self.internal_message = self.data['errors'][0]['message']
 
     def check_valid(self):
-        if self.status_code not in [200, 204]:
+        if str(self.status_code)[0] != '2' and self.status_code not in self.accept_status_codes:
             self.has_error = True
 
     def get_message(self):

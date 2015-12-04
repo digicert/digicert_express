@@ -8,8 +8,13 @@ import argparse
 import utils
 from parsers import base as base_parser
 from platforms import centos_platform, ubuntu_platform
+import readline
+
+readline.parse_and_bind('tab: complete')
+readline.parse_and_bind('set editing-mode vi')
 
 def main():
+    # TODO make sure we are running with sudo/root privileges
     # accept arguments
     parser = argparse.ArgumentParser(description='Download your certificate and secure your domain in one step')
     parser.add_argument("--order_id", action="store", help="DigiCert order ID for certificate")
@@ -79,13 +84,18 @@ def main():
             # We could push them to order here :p
             raise Exception("No orders found matching that criteria")
         order = select_order(orders)
+        # TODO this right here?
+        order = get_order(order['id'])
         if len(order['certificate']['dns_names']) > 1:
             dns_names = order['certificate']['dns_names']
         else:
             dns_names = [order['certificate']['common_name']]
         order_id = order['id']
 
+    private_key_file = None
+    csr_file = None
     if order and order['status'] == 'needs_csr':
+        # TODO do we want to try to find an existing csr?
         private_key_file, csr_file = utils.create_csr(dns_name=vhost, order=order)
         upload_csr(order_id, csr_file)
         order = get_order(order_id)
@@ -93,15 +103,18 @@ def main():
             pass  # download cert
 
     if not private_key_file:
+        print "private key file not found"
         # go and find the private key
         # if not found...
-        if args.allow_dups:
+        if args.allow_dups or (order and order['allow_duplicates'] == 1):
+            print "\033[1mDuplicates require permission to approve requests on this order.\033[0m"
             if raw_input("Are you trying to install a duplicate certificate? (Y/n) ") == 'y':
                 order = get_order(order_id) if not order else order
                 private_key_file, csr_file = utils.create_csr(dns_name=vhost, order=order)
                 dup_data = create_duplicate(order=order, csr_file=csr_file)
                 if not dup_data['sub_id']:
                     raise Exception("DOH")
+                order['sub_id'] = dup_data['sub_id']
         # require a file path to the private key
 
     if not cert_path:
@@ -115,19 +128,21 @@ def main():
         # validate the private key is for the certificate we have
         # if they don't match, exception
         # if they match, copy them to the right place with the intermediate
+        # then install them
         pass
 
 
 # TODO consider moving API request calls to their own file (api.py maybe?)
 def create_duplicate(order, csr_file):
     logger = loggers.get_logger(__name__)
+    check_credential()
     csr_text = None
     with open(csr_file, "r") as f:
         csr_text = f.read()
     # TODO consider changing common name to vhost if we need to or can
     cert_data = {"certificate": {"common_name": order['certificate']['common_name'], "csr": csr_text, "signature_hash": order['certificate']['signature_hash'], "server_platform": {"id": 2}, "dns_names": order['certificate']['dns_names']}}
     logger.debug("Submitting request for duplicate on order #{0} with data {1}".format(order['id'], json.dumps(cert_data)))
-    r = Request().post('/order/{0}/duplicate'.format(order['id']), cert_data)
+    r = Request().post('/order/certificate/{0}/duplicate'.format(order['id']), cert_data)
     if r.has_error:
         # This is an unrecoverable error. We can't see the API for some reason
         if r.is_response_error():
@@ -146,7 +161,7 @@ def upload_csr(order_id, csr_file):
     logger.debug("Reading CSR from file at {0}".format(csr_file))
     with open(csr_file, "r") as f:
         csr_text = f.read()
-    r = Request().post('/order/{0}/csr', {'csr': csr_text})
+    r = Request().post('/order/certificate/{0}/csr'.format(order_id), {'csr': csr_text})
     if r.has_error:
         # This is an unrecoverable error. We can't see the API for some reason
         if r.is_response_error():
