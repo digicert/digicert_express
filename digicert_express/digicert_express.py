@@ -189,9 +189,14 @@ def get_issued_orders(domain_filter=None):
     orders = []
     for order in r.data['orders']:
         if domain_filter:
-            if domain_filter not in order['certificate']['dns_names']:
-                continue
-        orders.append(order)
+            if domain_filter in order['certificate']['dns_names']:
+                orders.append(order)
+            else:   # Check for wildcard matches
+                for dns_name in order['certificate']['dns_names']:  # For dns_name *.example.com, the domain_filter ends with .example.com or equals example.com
+                    if (dns_name[:2] == '*.') and (dns_name[1:] == domain_filter[1-len(dns_name):] or dns_name[2:] == domain_filter):
+                        orders.append(order)
+                        break
+
     logger.debug("Returning {0} orders after filtering".format(len(orders)))
     return orders
 
