@@ -3,6 +3,7 @@ import platform
 import re
 import os
 import config
+from platforms import centos_platform, ubuntu_platform
 
 def normalize_common_name_file(common_name):
     return common_name.replace("*", "any").replace(".", "_")
@@ -11,7 +12,10 @@ def determine_platform():
     logger = loggers.get_logger(__name__)
     distro_name = platform.linux_distribution()  # returns a tuple ('', '', '') (distroName, version, code name)
     logger.debug("Found platform: {0}".format(" : ".join(distro_name)))
-    return distro_name
+    if distro_name[0] == "CentOS":
+        return centos_platform.CentosPlatform()
+    else:
+        return ubuntu_platform.UbuntuPlatform()
 
 def create_regex(text):
     """
@@ -24,6 +28,16 @@ def create_regex(text):
     """
 
     return "".join(["[" + c.upper() + c.lower() + "]" if c.isalpha() else c for c in re.escape(text)])
+
+def save_certs(certs, dns_name):
+    # TODO should we add the order_id and sub_id to always make this unique?
+    cert_path = '{0}/{1}/{1}.crt'.format(config.FILE_STORE, normalize_common_name_file(dns_name))
+    with open(cert_path, 'w') as cert_file:
+        cert_file.write(certs['certificate'])
+    intermediate_path = '{0}/{1}/DigiCertCA.crt'.format(config.FILE_STORE, normalize_common_name_file(dns_name))
+    with open(intermediate_path, 'w') as int_file:
+        int_file.write(certs['intermediate'])
+    return cert_path
 
 def get_dns_names_from_cert(cert_path):
     logger = loggers.get_logger(__name__)

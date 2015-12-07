@@ -8,8 +8,8 @@ import argparse
 import utils
 import os
 from parsers import base as base_parser
-from platforms import centos_platform, ubuntu_platform
 import readline
+import shutil
 
 readline.parse_and_bind('tab: complete')
 readline.parse_and_bind('set editing-mode vi')
@@ -35,13 +35,7 @@ def main():
     cert_path = args.cert_path
 
     # get platform class and check platform level dependencies
-    platform = None
-    # TODO maybe have determine_platform return the platform object instead of doing it this way.
-    dist = utils.determine_platform()
-    if dist[0] == "CentOS":
-        platform = centos_platform.CentosPlatform()
-    else:
-        platform = ubuntu_platform.UbuntuPlatform()
+    platform = utils.determine_platform()
 
     ignored_packages = platform.check_dependencies()
     if ignored_packages:
@@ -87,14 +81,11 @@ def main():
         order = select_order(orders)
         # TODO this right here?
         order = get_order(order['id'])
-        if len(order['certificate']['dns_names']) > 1:
-            dns_names = order['certificate']['dns_names']
-        else:
-            dns_names = [order['certificate']['common_name']]
         order_id = order['id']
 
     private_key_file = None
-    csr_file = None
+    private_key_matches_cert = False
+
     # see if the order needs to have a csr uploaded
     if order and order['status'] == 'needs_csr':
         # TODO do we want to try to find an existing csr?
@@ -102,10 +93,11 @@ def main():
         upload_csr(order_id, csr_file)
         order = get_order(order_id)
         if order['status'] == 'issued':
-            certs = download_certificate(order)  # download cert
-            # write certs to disk
-            # set cert_path
+            certs = download_certificate(order)
+            cert_path = utils.save_certs(certs, vhost)
+            private_key_matches_cert = True
 
+    # TODO perform very basic searches for the PK and cert files based on where we would have stored them (including the order_id and sub_id)
     if not private_key_file:
         #private_key_file = locate_pk()
         pass
@@ -113,58 +105,67 @@ def main():
         #cert_path = locate_cert()
         pass
 
-    # FIXME this if block and the next one for cert_path need to be designed better
-    if not private_key_file:
-        if args.allow_dups or (order and order['allow_duplicates'] == 1):
-            print "\033[1mDuplicates require permission to approve requests on this order.\033[0m"
-            if raw_input("Are you trying to install a duplicate certificate? (Y/n) ") == 'y':
-                order = get_order(order_id) if not order else order
-                private_key_file, csr_file = utils.create_csr(dns_name=vhost, order=order)
-                dup_data = create_duplicate(order=order, csr_file=csr_file)
-                if not 'sub_id' in dup_data:
-                    approve_request(dup_data['requests'][0]['id'])
-                    duplicates = get_duplicates(order['id'])
-                    if not duplicates:
-                        raise Exception("Could not collect any duplicates for this order")
-                    order['sub_id'] = duplicates['certificates'][0]['sub_id']
-                else:
-                    order['sub_id'] = dup_data['sub_id']
-                if not order['sub_id']:
-                    raise Exception("Something went wrong")
-                certs = download_certificate(order)
-                # {'certificate': certfile, 'intermediate': DigiCertCA.crt}
-                # write certs to disk
-                # set cert_path
+    while not private_key_matches_cert:
+        if not private_key_file:
+            if args.allow_dups or (order and order['allow_duplicates'] == 1):
+                print "\033[1mDuplicates require permission to approve requests on this order.\033[0m"
+                if raw_input("Are you trying to install a duplicate certificate? (Y/n) ") == 'y':
+                    order = get_order(order_id) if not order else order
+                    private_key_file, csr_file = utils.create_csr(dns_name=vhost, order=order)
+                    dup_data = create_duplicate(order=order, csr_file=csr_file)
+                    if not 'sub_id' in dup_data:
+                        approve_request(dup_data['requests'][0]['id'])
+                        duplicates = get_duplicates(order['id'])
+                        if not duplicates:
+                            raise Exception("Could not collect any duplicates for this order")
+                        order['sub_id'] = duplicates['certificates'][0]['sub_id']
+                    else:
+                        order['sub_id'] = dup_data['sub_id']
+                    if not order['sub_id']:
+                        raise Exception("Something went wrong")
+                    certs = download_certificate(order)
+                    cert_path = utils.save_certs(certs, vhost)
+                    private_key_matches_cert = True
+                    continue
+            # Cert does not allow duplicates, or the user chose no (still missing private_key_file)
+            pk_path = None
+            while not private_key_file or pk_path != "q":
+                pk_path = raw_input("please provide the path to the private key for this certificate: (q to quit) ")
+                if pk_path == "q":
+                    raise Exception("Cannot install the certificate without a private key file")
+                if not os.path.isfile(pk_path):
+                    logger.info("The path {0} is not a valid file. Please try again.")
+                    continue
+                private_key_file = pk_path
+        if not cert_path:
+            certs = download_certificate(order)
+            cert_path = utils.save_certs(certs, vhost)
+        private_key_matches_cert = validate_private_key(private_key_file, cert_path)
+        if not private_key_matches_cert:
+            print "\033[1mThe private key provided did not match the certificate.\033[0m"
+            private_key_file = None
+        elif config.FILE_STORE not in private_key_file:
+            new_private_key_file = "{0}/{1}/{1}.key".format(config.FILE_STORE, utils.normalize_common_name_file(vhost))
+            shutil.copyfile(private_key_file, new_private_key_file)
+            private_key_file = new_private_key_file
 
-    # this looks awful but it is just checking to make sure that they did not install a duplicate]
-    if not private_key_file:
-        pk_path = None
-        while not private_key_file or pk_path != "q":
-            pk_path = raw_input("please provide the path to the private key for this certificate: (q to quit) ")
-            if pk_path == "q":
-                raise Exception("Cannot install the certificate without a private key file")
-            if not os.path.isfile(pk_path):
-                logger.info("The path {0} is not a valid file. Please try again.")
-                continue
-            private_key_file = pk_path
+    # Sanity check
+    if not cert_path or not private_key_file:
+        raise Exception("Something bad happened. We shouldn't have been able to get here")
 
-        # require a file path to the private key
+    # install in apache
+    # restart apache
+    # verify that the existing site responds to https afterwards
 
-    if not cert_path:
-        # TODO should we search for an existing one?
-        # if not found and we have an order_id, ask if they want to download the certificate
-        # if they don't, require a file path to the cert file
-        # if they do, download it and copy the files to the right folder
-        pass
 
-    if cert_path and private_key_file:
-        # validate the private key is for the certificate we have
-        # if they don't match, exception
-        # if they match, copy them to the right place with the intermediate
-        # install in apache
-        # restart apache
-        # verify that the existing site responds to https afterwards
-        pass
+def validate_private_key(private_key_path, cert_path):
+    key_command = "openssl rsa -noout -modulus -in \"{0}\" | openssl md5".format(private_key_path)
+    crt_command = "openssl x509 -noout -modulus -in \"{0}\" | openssl md5".format(cert_path)
+
+    key_modulus = os.popen(key_command).read()
+    crt_modulus = os.popen(crt_command).read()
+
+    return key_modulus == crt_modulus
 
 
 # TODO consider moving API request calls to their own file (api.py maybe?)
