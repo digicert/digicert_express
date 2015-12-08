@@ -153,9 +153,11 @@ def main():
     if not cert_path or not private_key_file:
         raise Exception("Something bad happened. We shouldn't have been able to get here")
 
-    # install in apache
-    # restart apache
+    # TODO I think a good place to start with this is in base-old.py, configure_apache
+    #aug.install_certificate(cert_path, private_key_file, vhost)
+    platform.restart_apache()
     # verify that the existing site responds to https afterwards
+    utils.validate_ssl_success(vhost)
 
 
 def validate_private_key(private_key_path, cert_path):
@@ -367,10 +369,6 @@ def select_order(orders):
         return orders[0]
     else:
         raise Exception("Could not find any orders, please visit the website and download an installer from your order details page")
-
-def do_everything_with_args(order_id='', domain='', api_key='', key=''):
-    raw_input("I'll attempt to secure virtual hosts configured on this web server with an SSL certificate.  Press ENTER to continue.")
-    print ''
 
 def check_credential():
     if not config.API_KEY:

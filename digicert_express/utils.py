@@ -3,6 +3,7 @@ import platform
 import re
 import os
 import config
+from httplib import HTTPSConnection
 from platforms import centos_platform, ubuntu_platform
 
 def normalize_common_name_file(common_name):
@@ -83,3 +84,21 @@ def create_csr(dns_name, order=None):
     logger.info("Created CSR file {0}...".format(csr_file_name))
     print ""
     return key_file_name, csr_file_name
+
+# TODO this could probably use better error handling. For example, if the dns name is simply not found and we get an [Errno -2] Name or service not known
+def validate_ssl_success(dns_name):
+    logger = loggers.get_logger(__name__)
+    # For simply checking that the site is available HTTPSConnection is good enough
+    logger.info("Verifying {0} is available over HTTPS...".format(dns_name))
+    try:
+        conn = HTTPSConnection(dns_name, timeout=10)
+        conn.request('GET', '/')
+        response = conn.getresponse()
+        if str(response.status)[0] == '2':
+            logger.info("{0} is reachable over HTTPS".format(dns_name))
+            return True
+        error = "Application error occurred with status: {0}".format(response.status)
+    except Exception as e:
+        error = str(e)
+    logger.info("There was a problem checking SSL site availability, your site may not be secure: {0}".format(error))
+    return False

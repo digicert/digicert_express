@@ -136,3 +136,68 @@ class BaseParser(object):
                             else:   # There is no dns_name filter, return everything.
                                 found_domains.append(aug_domain)
         return found_domains
+
+    def _create_secure_vhost(self, vhost):
+        self.logger.info("Creating new virtual host %s on port 443" % vhost)
+        secure_vhost = None
+        host_file = "/files{0}".format(self.get_path_to_file(vhost))
+
+        # create a map of the insecure vhost's configuration
+        vhost_map = list()
+        self._create_map_from_vhost(vhost, vhost_map)
+
+        # TODO we need to offload this to the platform object
+        # self.platform.create_parent_directive(self.aug)
+        if utils.determine_platform()[0] != "CentOS":
+
+            # check if there is an IfModule for mod_ssl.c, if not create it
+            if_module = None
+            check_matches = self.aug.match("{0}/*[label()=~regexp('{1}')]".format(host_file, utils.create_regex("IfModule")))
+            if check_matches:
+                for check in check_matches:
+                    if self.aug.get(check + "/arg") == "mod_ssl.c":
+                        if_module = check
+
+            if not if_module:
+                self.aug.set(host_file + "/IfModule[last()+1]/arg", "mod_ssl.c")
+                if_modules = self.aug.match(host_file + "/*[self::IfModule/arg='mod_ssl.c']")
+                if len(if_modules) > 0:
+                    if_module = if_modules[0]
+                    host_file = if_module
+                else:
+                    raise Exception("An error occurred while creating IfModule mod_ssl.c for {0}.".format(self.domain), self.directives)
+
+        # create a new secure vhost
+        vhost_name = self.aug.get(vhost + "/arg")
+        vhost_name = vhost_name[0:vhost_name.index(":")] + ":443"
+        self.aug.set(host_file + "/VirtualHost[last()+1]/arg", vhost_name)
+
+        vhosts = self.aug.match("{0}/*[self::VirtualHost/arg='{1}']".format(host_file, vhost_name))
+        for vhost in vhosts:
+            secure_vhost = vhost
+
+            # write the insecure vhost configuration into the new secure vhost
+            self._create_vhost_from_map(secure_vhost, vhost_map)
+
+        self.check_for_parsing_errors()
+
+        return secure_vhost
+
+    def get_path_to_file(self, path):
+        """
+        Take an augeas path (ie: /files/etc/apache2/apache2.conf/VirtualHost/Directory/) and return the path
+        to the apache configuration file (ie: /etc/apache2/apache2.conf)
+
+        :param path
+        :return: path to an actual file or None
+        """
+        if "/files/" in path[:7]:
+            path = path[6:]
+
+        while not os.path.exists(path) and not os.path.isdir(path):
+            last_slash_index = path.rfind("/")
+            if last_slash_index > 0:
+                path = path[:last_slash_index]
+            else:
+                return None
+        return path
