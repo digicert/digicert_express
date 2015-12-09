@@ -81,3 +81,7 @@ class BasePlatform():
             error = str(e)
         self.logger.error("Problem restarting apache: {0}".format(error))
         return False
+
+    def get_apache_user(self):
+        command = "ps aux | egrep '{0}' | grep -v `whoami` | grep -v root | head -n1 | awk '{{print $1}}'".format(self.APACHE_PROCESS_NAME)
+        return os.popen(command).read().strip()

@@ -102,3 +102,22 @@ def validate_ssl_success(dns_name):
         error = str(e)
     logger.info("There was a problem checking SSL site availability, your site may not be secure: {0}".format(error))
     return False
+
+def validate_private_key(private_key_path, cert_path):
+    logger = loggers.get_logger(__name__)
+    key_command = "openssl rsa -noout -modulus -in \"{0}\" | openssl md5".format(private_key_path)
+    crt_command = "openssl x509 -noout -modulus -in \"{0}\" | openssl md5".format(cert_path)
+
+    logger.info("Verifying private key matches certificate...")
+    key_modulus = os.popen(key_command).read()
+    crt_modulus = os.popen(crt_command).read()
+
+    return key_modulus == crt_modulus
+
+def set_permission(file_path, user_name, mode=755):
+    logger = loggers.get_logger(__name__)
+    # change the owners of the ssl files
+    logger.info("Making file {0} readable by {1} with mode {2}".format(file_path, user_name, mode))
+    os.system("chown root:{0} {1}".format(user_name, file_path))
+    # change the permission of the ssl files, only the root and apache users should have read permissions
+    os.system("chmod {0} {1}".format(mode, file_path))

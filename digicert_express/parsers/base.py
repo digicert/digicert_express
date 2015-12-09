@@ -5,10 +5,14 @@ import traceback
 import utils
 import os
 import fnmatch
+import shutil
+import re
+from collections import OrderedDict
 
 class BaseParser(object):
     """ Base parser object.
     """
+    directives = dict()
 
     def __init__(self, platform, aug=None, autoload=True):
         self.logger = loggers.get_logger(__name__)
@@ -106,26 +110,27 @@ class BaseParser(object):
         matches = self.aug.match("/augeas/load/Httpd/incl")
         for match in matches:
             host_file = "/files{0}".format(self.aug.get(match))
+            self.logger.debug("gvosScanning hosts file {0}".format(host_file))
             if '~previous' not in host_file:
                 vhosts = self.aug.match("{0}/*[label()=~regexp('{1}')]".format(host_file, utils.create_regex("VirtualHost")))
                 vhosts += self.aug.match("{0}/*/*[label()=~regexp('{1}')]".format(host_file, utils.create_regex("VirtualHost")))
 
-                vhost = self._get_vhosts_domain_name(vhosts, '443', dns_names)
-                if not vhost:
-                    vhost = self._get_vhosts_domain_name(vhosts, '80', dns_names)
+                vhost = self._get_vhosts_domain_name(vhosts, dns_names=dns_names)
                 if vhost:
                     server_virtual_hosts.extend(vhost)
         return server_virtual_hosts
 
-    def _get_vhosts_domain_name(self, vhosts, port, dns_names):
+    def _get_vhosts_domain_name(self, vhosts, port=None, dns_names=None):
         found_domains = []
         for vhost in vhosts:
-            if port in self.aug.get(vhost + "/arg"):
+            self.logger.debug("Scanning vhost {0} on port {1} with filter {2}".format(vhost, port, ",".join(dns_names)))
+            if port is None or port in self.aug.get(vhost + "/arg"):
                 check_matches = self.aug.match("{0}/*[self::directive=~regexp('{1}')]".format(vhost, utils.create_regex("ServerName")))
                 if check_matches:
                     for check in check_matches:
                         if self.aug.get(check + "/arg"):
                             aug_domain = self.aug.get(check + "/arg")
+                            self.logger.debug("Found potential match {0} with filter {1}".format(aug_domain, ",".join(dns_names)))
                             if dns_names and aug_domain in dns_names:
                                 found_domains.append(aug_domain)
                             elif dns_names:   # Check for wildcard matches
@@ -137,8 +142,34 @@ class BaseParser(object):
                                 found_domains.append(aug_domain)
         return found_domains
 
+    def get_vhost_path_by_domain(self, dns_name):
+        vhost = None
+        matches = self.aug.match("/augeas/load/Httpd/incl")
+        for match in matches:
+            host_file = "/files{0}".format(self.aug.get(match))
+            self.logger.debug("gvpbdScanning hosts file {0}".format(host_file))
+            if '~previous' not in host_file:
+                vhosts = self.aug.match("{0}/*[label()=~regexp('{1}')]".format(host_file, utils.create_regex("VirtualHost")))
+                vhosts += self.aug.match("{0}/*/*[label()=~regexp('{1}')]".format(host_file, utils.create_regex("VirtualHost")))
+                self.logger.debug("Checking vhost {0}".format(",".join(vhosts)))
+                match_vhosts = self._get_vhosts_domain_name(vhosts, '443', [dns_name])
+                if not match_vhosts:
+                    match_vhosts = self._get_vhosts_domain_name(vhosts, '80', [dns_name])
+                    if match_vhosts:
+                        # we didn't find an existing 443 virtual host but found one on 80
+                        # create a new virtual host for 443 based on 80
+                        vhost = self._create_secure_vhost(match_vhosts[0])
+                    else:
+                        self.logger.info("Could not find virtualhost for {0}".format(dns_name))
+                else:
+                    vhost = match_vhosts[0]
+
+                # return as soon as we have a vhost
+                return vhost
+        return None
+
     def _create_secure_vhost(self, vhost):
-        self.logger.info("Creating new virtual host %s on port 443" % vhost)
+        self.logger.info("Creating new virtual host {0} on port 443".format(vhost))
         secure_vhost = None
         host_file = "/files{0}".format(self.get_path_to_file(vhost))
 
@@ -201,3 +232,187 @@ class BaseParser(object):
             else:
                 return None
         return path
+
+    def _create_map_from_vhost(self, path, vhost_map, text=""):
+        # recurse through the directives and sub-groups to generate a map
+        check_matches = self.aug.match(path + "/*")
+        if check_matches:
+            for check in check_matches:
+                values = list()
+                # get the type of configuration
+                config_type = check[len(path)+1:]
+                config_name = self.aug.get(check)
+                config_value = self.aug.get(check + "/arg")
+
+                if "arg" not in config_type and "#comment" not in config_type:
+                    # check if we have a config_value, if we don't its likely that there are multiple
+                    # values rather than just one and we need to get them via aug.match
+                    if not config_value:
+                        arg_check_matches = self.aug.match("{0}/{1}/arg".format(path, config_type))
+                        for arg_check in arg_check_matches:
+                            values.append(self.aug.get(arg_check))
+                            if config_value:
+                                config_value += " {0}".format(self.aug.get(arg_check))
+                            else:
+                                config_value = self.aug.get(arg_check)
+                    else:
+                        values.append(config_value)
+
+                    # check for config_name, if we don't then this a sub-group and not a directive
+                    if not config_name:
+                        # this is a sub-group, recurse
+                        sub_map = list()
+                        vhost_map.append({'type': config_type, 'name': None, 'values': values, 'sub_group': sub_map})
+                        self._create_map_from_vhost(path + "/" + config_type, sub_map, "{0}\t".format(text))
+                    else:
+                        vhost_map.append({'type': config_type, 'name': config_name, 'values': values, 'sub_group': None})
+
+    def _create_vhost_from_map(self, path, vhost_map, text=""):
+        # recurse through the map and write the new vhost
+        for entry in vhost_map:
+            config_type = entry['type']
+            config_name = entry['name']
+            config_values = entry['values']
+            config_sub = entry['sub_group']
+
+            value = None
+            for v in config_values:
+                if not value:
+                    value = v
+                else:
+                    value += " {0}".format(v)
+
+            self.aug.set("{0}/{1}".format(path, config_type), config_name)
+
+            if len(config_values) > 1:
+                i = 1
+                for value in config_values:
+                    self.aug.set("{0}/{1}/arg[{2}]".format(path, config_type, i), value)
+                    i += 1
+            else:
+                self.aug.set("{0}/{1}/arg".format(path, config_type), value)
+
+            if not config_name and config_type and config_sub:
+                # this is a sub-group, recurse
+                sub_groups = self.aug.match("{0}/{1}".format(path, config_type))
+                for sub_group in sub_groups:
+                    self._create_vhost_from_map(sub_group, config_sub, "{0}\t".format(text))
+
+    def set_certificate_directives(self, vhost_path, dns_name):
+        try:
+            if not vhost_path:
+                raise Exception("Virtual Host was not found for {0}.  Please verify that the 'ServerName' directive in "
+                                "your Virtual Host is set to {1} and try again.".format(dns_name, dns_name))
+
+            # back up the configuration file
+            host_file = self.get_path_to_file(vhost_path)
+            shutil.copy(host_file, "{0}~previous".format(host_file))
+
+            errors = []
+            for directive in self.directives:
+                matches = self.aug.match("{0}/*[self::directive=~regexp('{1}')]".format(vhost_path, utils.create_regex(directive)))
+                if len(matches) > 0:
+                    for match in matches:
+                        self.aug.set("{0}/arg".format(match), self.directives[directive])
+                        self.logger.info("Directive {0} was updated to {1} in {2}".format(directive, self.directives[directive], match))
+                else:
+                    self.aug.set(vhost_path + "/directive[last()+1]", directive)
+                    self.aug.set(vhost_path + "/directive[last()]/arg", self.directives[directive])
+
+            if len(errors):
+                error_msg = "Could not update all directives:\n"
+                for error in errors:
+                    error_msg = "{0}\t{1}\n".format(error_msg, error)
+                raise Exception(error_msg)
+
+            self.aug.save()
+
+            # check for augeas errors
+            self.check_for_parsing_errors()
+
+            # verify the added/modified directives are the values we set
+            errors = []
+            for directive in self.directives:
+                val = None
+                matches = self.aug.match("{0}/*[self::directive=~regexp('{1}')]/arg".format(vhost_path, utils.create_regex(directive)))
+                if len(matches) > 0:
+                    for match in matches:
+                        val = self.aug.get(match)
+
+                if val != self.directives[directive]:
+                    errors.append("{0} is {1} instead of {2}".format(directive, val, self.directives[directive]))
+
+            if len(errors) > 0:
+                error_msg = "Some of your directives are incorrect:\n"
+                for error in errors:
+                    error_msg = "{0}\t{1}\n".format(error_msg, error)
+                raise Exception(error_msg)
+
+        except Exception, e:
+            self.check_for_parsing_errors()
+            raise Exception("An error occurred while updating the Virtual Host for {0}: {1}".format(dns_name, str(e)))
+
+        # format the file:
+        try:
+            self.format_config_file(host_file)
+        except Exception as e:
+            raise Exception("The changes have been made but there was an error occurred while formatting your file:\n{0}".format(str(e)))
+
+        # verify that augeas can still load the changed file
+        self.aug.load()
+
+    def format_config_file(self, host_file):
+        """
+        Format the apache configuration file.  Loop through the lines of the file and indent/un-indent where necessary
+
+        :param host_file:
+        :return:
+        """
+        self.logger.info("Formatting file {0}".format(host_file))
+
+        # get the lines of the config file
+        lines = list()
+        with open(host_file) as f:
+            lines = f.read().splitlines()
+
+        f = open(host_file, 'w+')
+
+        try:
+            self.format_lines(lines, f)
+        finally:
+            f.truncate()
+            f.close()
+
+    def format_lines(self, lines, f):
+        tabs = ""
+        for line in lines:
+            line = line.lstrip()
+            # check for the beginning of a tag, if found increase the indentation after writing the tag
+            if re.match("^<(\w+)", line):
+                f.write("{0}{1}\n".format(tabs, line))
+                tabs += "\t"
+            else:
+                # check for the end of a tag, if found decrease the indentation
+                if re.match("^</(\w+)", line):
+                    if len(tabs) > 1:
+                        tabs = tabs[:-1]
+                    else:
+                        tabs = ""
+                # write the config/tag
+                f.write("{0}{1}\n".format(tabs, line))
+
+    def preinstall_setup(self, cert_path, intermediate_path, pk_path):
+        self.directives = OrderedDict()
+        self.directives['SSLEngine'] = "on"
+        self.directives['SSLCertificateFile'] = cert_path
+        self.directives['SSLCertificateKeyFile'] = pk_path
+        self.directives['SSLCertificateChainFile'] = intermediate_path
+
+    def install_certificate(self, dns_name):
+        self.logger.info("Configuring Web Server for virtual host: {0}".format(dns_name))
+
+        virtual_host = self.get_vhost_path_by_domain(dns_name)
+        self.set_certificate_directives(virtual_host, dns_name)
+        utils.enable_ssl_mod()
+
+        self.logger.info('Apache configuration updated successfully.')

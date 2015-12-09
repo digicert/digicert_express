@@ -140,7 +140,7 @@ def main():
         if not cert_path:
             certs = download_certificate(order)
             cert_path = utils.save_certs(certs, vhost)
-        private_key_matches_cert = validate_private_key(private_key_file, cert_path)
+        private_key_matches_cert = utils.validate_private_key(private_key_file, cert_path)
         if not private_key_matches_cert:
             print "\033[1mThe private key provided did not match the certificate.\033[0m"
             private_key_file = None
@@ -153,22 +153,21 @@ def main():
     if not cert_path or not private_key_file:
         raise Exception("Something bad happened. We shouldn't have been able to get here")
 
+    intermediate_path = "{0}/{1}/DigiCertCA.crt".format(config.FILE_STORE, utils.normalize_common_name_file(vhost))
+
+    # set the right file permissions so the certs can be read by apache
+    apache_user = platform.get_apache_user()
+    logger.debug("Found Apache user {0}".format(apache_user))
+    utils.set_permission(cert_path, apache_user, 644)
+    utils.set_permission(private_key_file, apache_user, 644)
+    utils.set_permission(intermediate_path, apache_user, 644)
+
     # TODO I think a good place to start with this is in base-old.py, configure_apache
-    #aug.install_certificate(cert_path, private_key_file, vhost)
+    aug.preinstall_setup(cert_path, intermediate_path, private_key_file)
+    aug.install_certificate(vhost)
     platform.restart_apache()
     # verify that the existing site responds to https afterwards
     utils.validate_ssl_success(vhost)
-
-
-def validate_private_key(private_key_path, cert_path):
-    key_command = "openssl rsa -noout -modulus -in \"{0}\" | openssl md5".format(private_key_path)
-    crt_command = "openssl x509 -noout -modulus -in \"{0}\" | openssl md5".format(cert_path)
-
-    key_modulus = os.popen(key_command).read()
-    crt_modulus = os.popen(crt_command).read()
-
-    return key_modulus == crt_modulus
-
 
 # TODO consider moving API request calls to their own file (api.py maybe?)
 def download_certificate(order):
