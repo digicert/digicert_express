@@ -1,18 +1,20 @@
 from setuptools import setup, find_packages
 
 setup(
-    name='digicert_express',
+    name='digicert-express',
     version='1.0.dev1',
     description='Express Install for DigiCert, Inc.',
     long_description=open('README.md', 'r').read(),
     classifiers=[
-        'Development Status :: 5 - Production/Stable',
+        'Development Status :: 3 - Alpha',
         'Intended Audience :: Information Technology',
         'License :: OSI Approved :: MIT License',
-        'Programming Language :: Python :: 2.7',
         'Topic :: Security',
+        'Programming Language :: Python :: 2.5',
+        'Programming Language :: Python :: 2.6',
+        'Programming Language :: Python :: 2.7',
     ],
-    url='https://github.com/digicert/express_install',
+    url='https://github.com/digicert/digicert_express',
     author='DigiCert, Inc.',
     author_email='support@digicert.com',
     license='MIT',
@@ -21,6 +23,9 @@ setup(
     include_package_data=True,
     install_requires=[
         'python-augeas',
-        'requests',
+        'requests>=2.8.1',
+        'ndg-httpsclient',
+        'pyasn1',
+        'pyOpenSSL'  # prefer OS install but we can try here, too
     ],
 )
