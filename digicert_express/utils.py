@@ -3,6 +3,7 @@ import platform
 import re
 import os
 import config
+import OpenSSL
 from httplib import HTTPSConnection
 from platforms import centos_platform, ubuntu_platform
 
@@ -38,6 +39,9 @@ def save_certs(certs, dns_name):
     intermediate_path = '{0}/{1}/DigiCertCA.crt'.format(config.FILE_STORE, normalize_common_name_file(dns_name))
     with open(intermediate_path, 'w') as int_file:
         int_file.write(certs['intermediate'])
+    # if 'root' in certs and certs['root']:
+    #     with open(intermediate_path, 'a') as int_file:
+    #         int_file.write(certs['intermediate'])
     return cert_path
 
 def get_dns_names_from_cert(cert_path):
@@ -45,10 +49,16 @@ def get_dns_names_from_cert(cert_path):
     if not cert_path or not os.path.isfile(cert_path):
         logger.info("Couldn't find valid certificate file at {0}".format(cert_path))
         return []
-    command = "sudo openssl x509 -in {0} -text -noout | sed -nr '/^ {{12}}X509v3 Subject Alternative Name/{{n; s/(^|,) *DNS:/,/g; s/(^|,) [^,]*//g;p}}'".format(cert_path)
-    dns_names_result = os.popen(command).read()
-    dns_names = dns_names_result.split(',')
-    dns_names = [x for x in dns_names if x]
+
+    dns_names = []
+    sans = ""
+    cert = OpenSSL.crypto.load_certificate(OpenSSL.crypto.FILETYPE_PEM, open(cert_path, 'r').read())
+    for idx in range(cert.get_extension_count()):
+        ext = cert.get_extension(idx)
+        if ext.get_short_name() == 'subjectAltName':
+            sans = str(ext)  # DNS:nocsr.com
+            break
+    dns_names = [x.split(':')[1] for x in sans.split(',') if x]
     return dns_names
 
 def create_csr(dns_name, order=None):
@@ -105,14 +115,28 @@ def validate_ssl_success(dns_name):
 
 def validate_private_key(private_key_path, cert_path):
     logger = loggers.get_logger(__name__)
-    key_command = "openssl rsa -noout -modulus -in \"{0}\" | openssl md5".format(private_key_path)
-    crt_command = "openssl x509 -noout -modulus -in \"{0}\" | openssl md5".format(cert_path)
+    try:
+        private_key_obj = OpenSSL.crypto.load_privatekey(OpenSSL.crypto.FILETYPE_PEM, open(private_key_path, 'r').read())
+    except OpenSSL.crypto.Error:
+        logger.info("Private key path was invalid")
+        return False
 
-    logger.info("Verifying private key matches certificate...")
-    key_modulus = os.popen(key_command).read()
-    crt_modulus = os.popen(crt_command).read()
+    try:
+        cert_obj = OpenSSL.crypto.load_certificate(OpenSSL.crypto.FILETYPE_PEM, open(cert_path, 'r').read())
+    except OpenSSL.crypto.Error:
+        logger.info("Certificate path was invalid")
+        return False
 
-    return key_modulus == crt_modulus
+    context = OpenSSL.SSL.Context(OpenSSL.SSL.TLSv1_METHOD)
+    context.use_privatekey(private_key_obj)
+    context.use_certificate(cert_obj)
+    try:
+        context.check_privatekey()
+        return True
+    except OpenSSL.SSL.Error as e:
+        logger.debug("Private key and certificate did not match: {0}".format(str(e)))
+        logger.info("\033[1mThe private key provided did not match the certificate.\033[0m")
+        return False
 
 def set_permission(file_path, user_name, mode=755):
     logger = loggers.get_logger(__name__)

@@ -40,14 +40,12 @@ class BaseParser(object):
             else:
                 raise Exception("We could not find your main apache configuration file.  Please ensure that apache is "
                                 "running or include the path to your virtual host file in your command line arguments")
-        except Exception, e:
+        except Exception as e:
             traceback.print_exc(file=sys.stdout)
-            print e.message
+            print str(e)
             raise e
             self.check_for_parsing_errors()
-            raise Exception(
-                "An error occurred while loading your apache configuration.\n{0}".format(e.message),
-                self.directives)
+            raise Exception("An error occurred while loading your apache configuration.\n{0}".format(str(e)))
 
     def _load_included_files(self, apache_config):
         # get the augeas path to the config file
@@ -110,36 +108,33 @@ class BaseParser(object):
         matches = self.aug.match("/augeas/load/Httpd/incl")
         for match in matches:
             host_file = "/files{0}".format(self.aug.get(match))
-            self.logger.debug("gvosScanning hosts file {0}".format(host_file))
             if '~previous' not in host_file:
                 vhosts = self.aug.match("{0}/*[label()=~regexp('{1}')]".format(host_file, utils.create_regex("VirtualHost")))
                 vhosts += self.aug.match("{0}/*/*[label()=~regexp('{1}')]".format(host_file, utils.create_regex("VirtualHost")))
 
-                vhost = self._get_vhosts_domain_name(vhosts, dns_names=dns_names)
+                vhost = set(self._get_vhosts_domain_name(vhosts, dns_names=dns_names))
                 if vhost:
                     server_virtual_hosts.extend(vhost)
         return server_virtual_hosts
 
-    def _get_vhosts_domain_name(self, vhosts, port=None, dns_names=None):
+    def _get_vhosts_domain_name(self, vhosts, port=None, dns_names=None, return_paths=False):
         found_domains = []
         for vhost in vhosts:
-            self.logger.debug("Scanning vhost {0} on port {1} with filter {2}".format(vhost, port, ",".join(dns_names)))
             if port is None or port in self.aug.get(vhost + "/arg"):
                 check_matches = self.aug.match("{0}/*[self::directive=~regexp('{1}')]".format(vhost, utils.create_regex("ServerName")))
                 if check_matches:
                     for check in check_matches:
                         if self.aug.get(check + "/arg"):
                             aug_domain = self.aug.get(check + "/arg")
-                            self.logger.debug("Found potential match {0} with filter {1}".format(aug_domain, ",".join(dns_names)))
                             if dns_names and aug_domain in dns_names:
-                                found_domains.append(aug_domain)
+                                found_domains.append(aug_domain if not return_paths else vhost)
                             elif dns_names:   # Check for wildcard matches
                                 for dns_name in dns_names:  # For *.example.com, the vhost ends with .example.com or equals example.com
                                     if (dns_name[:2] == '*.') and (dns_name[1:] == aug_domain[1-len(dns_name):] or dns_name[2:] == aug_domain):
-                                        found_domains.append(aug_domain)
+                                        found_domains.append(aug_domain if not return_paths else vhost)
                                         break
                             else:   # There is no dns_name filter, return everything.
-                                found_domains.append(aug_domain)
+                                found_domains.append(aug_domain if not return_paths else vhost)
         return found_domains
 
     def get_vhost_path_by_domain(self, dns_name):
@@ -147,25 +142,22 @@ class BaseParser(object):
         matches = self.aug.match("/augeas/load/Httpd/incl")
         for match in matches:
             host_file = "/files{0}".format(self.aug.get(match))
-            self.logger.debug("gvpbdScanning hosts file {0}".format(host_file))
             if '~previous' not in host_file:
                 vhosts = self.aug.match("{0}/*[label()=~regexp('{1}')]".format(host_file, utils.create_regex("VirtualHost")))
                 vhosts += self.aug.match("{0}/*/*[label()=~regexp('{1}')]".format(host_file, utils.create_regex("VirtualHost")))
-                self.logger.debug("Checking vhost {0}".format(",".join(vhosts)))
-                match_vhosts = self._get_vhosts_domain_name(vhosts, '443', [dns_name])
+                match_vhosts = self._get_vhosts_domain_name(vhosts, '443', [dns_name], return_paths=True)
                 if not match_vhosts:
-                    match_vhosts = self._get_vhosts_domain_name(vhosts, '80', [dns_name])
+                    match_vhosts = self._get_vhosts_domain_name(vhosts, '80', [dns_name], return_paths=True)
                     if match_vhosts:
                         # we didn't find an existing 443 virtual host but found one on 80
                         # create a new virtual host for 443 based on 80
                         vhost = self._create_secure_vhost(match_vhosts[0])
-                    else:
-                        self.logger.info("Could not find virtualhost for {0}".format(dns_name))
                 else:
                     vhost = match_vhosts[0]
 
-                # return as soon as we have a vhost
-                return vhost
+                # if the vhost got set above, then we should return it because we found a match. However, it might not have been found in this iteration
+                if vhost:
+                    return vhost
         return None
 
     def _create_secure_vhost(self, vhost):
@@ -177,10 +169,8 @@ class BaseParser(object):
         vhost_map = list()
         self._create_map_from_vhost(vhost, vhost_map)
 
-        # TODO we need to offload this to the platform object
-        # self.platform.create_parent_directive(self.aug)
-        if utils.determine_platform()[0] != "CentOS":
-
+        # only add the IfModule section if the platform supports it
+        if self.platform.include_ifmodule():
             # check if there is an IfModule for mod_ssl.c, if not create it
             if_module = None
             check_matches = self.aug.match("{0}/*[label()=~regexp('{1}')]".format(host_file, utils.create_regex("IfModule")))
@@ -188,7 +178,6 @@ class BaseParser(object):
                 for check in check_matches:
                     if self.aug.get(check + "/arg") == "mod_ssl.c":
                         if_module = check
-
             if not if_module:
                 self.aug.set(host_file + "/IfModule[last()+1]/arg", "mod_ssl.c")
                 if_modules = self.aug.match(host_file + "/*[self::IfModule/arg='mod_ssl.c']")
@@ -196,18 +185,20 @@ class BaseParser(object):
                     if_module = if_modules[0]
                     host_file = if_module
                 else:
-                    raise Exception("An error occurred while creating IfModule mod_ssl.c for {0}.".format(self.domain), self.directives)
+                    raise Exception("An error occurred while creating IfModule mod_ssl.c for {0}.".format(vhost))
 
+        # FIXME we may be able to improve this in the case where multiple secure vhosts are already in the config file
         # create a new secure vhost
         vhost_name = self.aug.get(vhost + "/arg")
         vhost_name = vhost_name[0:vhost_name.index(":")] + ":443"
         self.aug.set(host_file + "/VirtualHost[last()+1]/arg", vhost_name)
 
+        # this should return an array of exactly one item: the secure vhost directive we just added to the current config file
         vhosts = self.aug.match("{0}/*[self::VirtualHost/arg='{1}']".format(host_file, vhost_name))
         for vhost in vhosts:
             secure_vhost = vhost
 
-            # write the insecure vhost configuration into the new secure vhost
+            # write the existing vhost configuration under the new secure vhost directive we found
             self._create_vhost_from_map(secure_vhost, vhost_map)
 
         self.check_for_parsing_errors()
@@ -413,6 +404,6 @@ class BaseParser(object):
 
         virtual_host = self.get_vhost_path_by_domain(dns_name)
         self.set_certificate_directives(virtual_host, dns_name)
-        utils.enable_ssl_mod()
+        self.platform.enable_ssl_mod()
 
         self.logger.info('Apache configuration updated successfully.')

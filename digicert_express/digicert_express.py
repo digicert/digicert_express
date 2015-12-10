@@ -1,15 +1,16 @@
 import getpass
 import config
 import sys
-from request import Request
+import traceback
 import loggers
 import json
 import argparse
 import utils
 import os
-from parsers import base as base_parser
 import readline
 import shutil
+from request import Request
+from parsers import base as base_parser
 
 readline.parse_and_bind('tab: complete')
 readline.parse_and_bind('set editing-mode vi')
@@ -125,16 +126,16 @@ def main():
                         raise Exception("Something went wrong")
                     certs = download_certificate(order)
                     cert_path = utils.save_certs(certs, vhost)
-                    private_key_matches_cert = True
+                    #private_key_matches_cert = True
                     continue
             # Cert does not allow duplicates, or the user chose no (still missing private_key_file)
-            pk_path = None
-            while not private_key_file or pk_path != "q":
-                pk_path = raw_input("please provide the path to the private key for this certificate: (q to quit) ")
-                if pk_path == "q":
+            pk_path = ""
+            while not private_key_file and pk_path.strip().lower() != "q":
+                pk_path = raw_input("Please provide the path to the private key for this certificate: (q to quit) ")
+                if pk_path.strip().lower() == "q":
                     raise Exception("Cannot install the certificate without a private key file")
                 if not os.path.isfile(pk_path):
-                    logger.info("The path {0} is not a valid file. Please try again.")
+                    logger.info("The path {0} is not a valid file. Please try again.".format(pk_path))
                     continue
                 private_key_file = pk_path
         if not cert_path:
@@ -142,7 +143,6 @@ def main():
             cert_path = utils.save_certs(certs, vhost)
         private_key_matches_cert = utils.validate_private_key(private_key_file, cert_path)
         if not private_key_matches_cert:
-            print "\033[1mThe private key provided did not match the certificate.\033[0m"
             private_key_file = None
         elif config.FILE_STORE not in private_key_file:
             new_private_key_file = "{0}/{1}/{1}.key".format(config.FILE_STORE, utils.normalize_common_name_file(vhost))
@@ -195,6 +195,7 @@ def download_certificate(order):
     return {
         "certificate": "-----BEGIN{0}".format(certs[1]),
         "intermediate": "-----BEGIN{0}".format(certs[2]),
+        "root": "-----BEGIN{0}".format(certs[3]),
     }
 
 
@@ -400,6 +401,7 @@ if __name__ == '__main__':
         main()
         print 'Finished'
     except Exception as ex:
+        traceback.print_exc(file=sys.stdout)
         logger.debug("Expectedly ended operation with message: {0}".format(ex))
         print ex
     except KeyboardInterrupt:
