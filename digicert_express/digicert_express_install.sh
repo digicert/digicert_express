@@ -62,7 +62,7 @@ fi
 echo "Found OS: ${os}"
 
 # check for OS, Version, and Apache Version compatibility
-# TODO this needs to be made more clear so users know what they did wrong
+# TODO this needs to be made more clear so users know what they did wrong and should let the script run even if the OS isn't supported
 
 INSTALL_PACKAGES=""
 PY_VERSION=`python -c 'import sys; print "%s.%s" % (sys.version_info[0], sys.version_info[1])'`
