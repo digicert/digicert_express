@@ -1,10 +1,14 @@
 from setuptools import setup, find_packages
 
+def readme():
+    with open('README.rst') as f:
+        return f.read()
+
 setup(
     name='digicert-express',
     version='1.0.dev1',
     description='Express Install for DigiCert, Inc.',
-    long_description=open('README.md', 'r').read(),
+    long_description=readme(),
     classifiers=[
         'Development Status :: 3 - Alpha',
         'Intended Audience :: Information Technology',
