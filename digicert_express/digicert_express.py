@@ -98,13 +98,14 @@ def main():
             cert_path = utils.save_certs(certs, vhost)
             private_key_matches_cert = True
 
-    # TODO perform very basic searches for the PK and cert files based on where we would have stored them (including the order_id and sub_id)
     if not private_key_file:
-        #private_key_file = locate_pk()
-        pass
-    if not cert_path:
-        #cert_path = locate_cert()
-        pass
+        # Check the path where we would have stored the private key, and the current directory
+        key_file_name1 = "{0}/{1}/{1}.key".format(config.FILE_STORE, utils.normalize_common_name_file(vhost))
+        key_file_name2 = "{0}/{1}.key".format(os.getcwd(), utils.normalize_common_name_file(vhost))
+        if os.path.exists(key_file_name1):
+            private_key_file = key_file_name1
+        elif os.path.exists(key_file_name2):
+            private_key_file = key_file_name2
 
     while not private_key_matches_cert:
         if not private_key_file:

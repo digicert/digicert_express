@@ -8,7 +8,7 @@ def get_logger(module_name, log_path='./'):
         # create console handler and set level to info
         # TODO switch stream handler back to .INFO before release
         handler = logging.StreamHandler()
-        handler.setLevel(logging.DEBUG)
+        handler.setLevel(logging.INFO)
         formatter = ExpressFormatter()
         handler.setFormatter(formatter)
         root_logger.addHandler(handler)
