@@ -1,7 +1,6 @@
 import getpass
 import config
 import sys
-import traceback
 import loggers
 import json
 import argparse
@@ -16,24 +15,22 @@ readline.parse_and_bind('tab: complete')
 readline.parse_and_bind('set editing-mode vi')
 
 def main():
-    # TODO make sure we are running with sudo/root privileges
+    utils.find_user_config()
     # accept arguments
     parser = argparse.ArgumentParser(description='Download your certificate and secure your domain in one step')
     parser.add_argument("--order_id", action="store", help="DigiCert order ID for certificate")
     parser.add_argument("--cert_path", action="store", help="the path to the certificate file")
-    parser.add_argument("--domain", action="store", help="Domain name to secure")
     parser.add_argument("--key", action="store", help="Path to private key file used to order certificate")
     parser.add_argument("--api_key", action="store", help="Skip authentication step with a DigiCert API key")
-    parser.add_argument("--sub_id", action="store", help="Duplicate key")
     parser.add_argument("--allow_dups", action="store", help="a flag to indicate whether the order type allows duplicates mostly for convenience")
 
     args = parser.parse_args()
 
     order_id = args.order_id
-    domain = args.domain
     if args.api_key:
         config.API_KEY = args.api_key
     cert_path = args.cert_path
+    private_key_file = args.key if os.path.isfile(args.key) else None
 
     # get platform class and check platform level dependencies
     platform = utils.determine_platform()
@@ -41,10 +38,6 @@ def main():
     ignored_packages = platform.check_dependencies()
     if ignored_packages:
         raise Exception("You will need to install these packages before continuing: {0}".format(",".join(ignored_packages)))
-
-    # user tried to manually pass a domain name without an order id. No workie.
-    if not order_id and domain:
-        raise Exception("You cannot use this tool this way. Please visit the website and download an installer from your order details page.")
 
     # get the dns names from the cert if one was passed in
     dns_names = utils.get_dns_names_from_cert(cert_path)
@@ -84,7 +77,6 @@ def main():
         order = get_order(order['id'])
         order_id = order['id']
 
-    private_key_file = None
     private_key_matches_cert = False
 
     # see if the order needs to have a csr uploaded
@@ -102,9 +94,9 @@ def main():
         # Check the path where we would have stored the private key, and the current directory
         key_file_name1 = "{0}/{1}/{1}.key".format(config.FILE_STORE, utils.normalize_common_name_file(vhost))
         key_file_name2 = "{0}/{1}.key".format(os.getcwd(), utils.normalize_common_name_file(vhost))
-        if os.path.exists(key_file_name1):
+        if os.path.isfile(key_file_name1):
             private_key_file = key_file_name1
-        elif os.path.exists(key_file_name2):
+        elif os.path.isfile(key_file_name2):
             private_key_file = key_file_name2
 
     while not private_key_matches_cert:
@@ -127,7 +119,6 @@ def main():
                         raise Exception("Something went wrong")
                     certs = download_certificate(order)
                     cert_path = utils.save_certs(certs, vhost)
-                    #private_key_matches_cert = True
                     continue
             # Cert does not allow duplicates, or the user chose no (still missing private_key_file)
             pk_path = ""
@@ -163,10 +154,10 @@ def main():
     utils.set_permission(private_key_file, apache_user, 644)
     utils.set_permission(intermediate_path, apache_user, 644)
 
-    # TODO I think a good place to start with this is in base-old.py, configure_apache
     aug.preinstall_setup(cert_path, intermediate_path, private_key_file)
     aug.install_certificate(vhost)
     platform.restart_apache()
+
     # verify that the existing site responds to https afterwards
     utils.validate_ssl_success(vhost)
 
@@ -397,13 +388,16 @@ def request_login():
     return r.data["api_key"]
 
 if __name__ == '__main__':
-    logger = loggers.get_logger(__name__)
     try:
+        if os.getuid() != 0:
+            raise BaseException("The Digicert Express Installer must be run as root.")
         main()
         print 'Finished'
     except Exception as ex:
-        traceback.print_exc(file=sys.stdout)
-        logger.debug("Expectedly ended operation with message: {0}".format(ex))
-        print ex
+        logger = loggers.get_logger(__name__)
+        logger.debug("Expectedly ended operation with message: {0}".format(str(ex)))
+        print "\nError occurred: {0}".format(str(ex))
     except KeyboardInterrupt:
-        print
+        print "\nProgram terminated by user"
+    except BaseException as bex:
+        print str(bex)

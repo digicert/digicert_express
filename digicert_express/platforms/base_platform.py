@@ -30,10 +30,10 @@ class BasePlatform():
                 self.logger.info("Finding Apache configuration files...")
                 # ex:   -D HTTPD_ROOT="/etc/httpd"\n
                 httpd_root_dir = [cfg_item for cfg_item in apache_config.split('\n') if httpd_root_check in cfg_item][0].split('=')[1].replace('"', '')
-                if os.path.exists(httpd_root_dir) and os.path.isdir(httpd_root_dir):
+                if os.path.isdir(httpd_root_dir):
                     server_config_file = os.path.join(httpd_root_dir, server_config_file)
 
-            if os.path.exists(server_config_file):
+            if os.path.isfile(server_config_file):
                 return server_config_file
 
     def check_dependencies(self):

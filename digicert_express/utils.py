@@ -7,6 +7,27 @@ import OpenSSL
 from httplib import HTTPSConnection
 from platforms import centos_platform, ubuntu_platform
 
+def find_user_config():
+    """
+    see if there is a custom configuration file in the user's home folder and update the config vars appropriately
+    """
+    import os
+    import json
+    home = os.path.expanduser("~")
+    if os.path.isfile("{0}/.digicert_express".format(home)):
+        cfg = open("{0}/.digicert_express".format(home), "r").read()
+        usercfg = json.loads(cfg)
+        if 'SERVICES_URL' in usercfg and usercfg['SERVICES_URL']:
+            config.SERVICES_URL = usercfg['SERVICES_URL']
+        if 'API_KEY' in usercfg and usercfg['API_KEY']:
+            config.API_KEY = usercfg['API_KEY']
+        if 'FILE_STORE' in usercfg and usercfg['FILE_STORE']:
+            config.FILE_STORE = usercfg['FILE_STORE']
+        if 'SEARCH_PATHS' in usercfg and usercfg['SEARCH_PATHS']:
+            config.SEARCH_PATHS = usercfg['SEARCH_PATHS']
+        if 'LOG_FILE' in usercfg and usercfg['LOG_FILE']:
+            config.LOG_FILE = usercfg['LOG_FILE']
+
 def normalize_common_name_file(common_name):
     return common_name.replace("*", "any").replace(".", "_")
 
@@ -31,17 +52,14 @@ def create_regex(text):
 
     return "".join(["[" + c.upper() + c.lower() + "]" if c.isalpha() else c for c in re.escape(text)])
 
+# TODO should we add the order_id and sub_id to always make this unique?
 def save_certs(certs, dns_name):
-    # TODO should we add the order_id and sub_id to always make this unique?
     cert_path = '{0}/{1}/{1}.crt'.format(config.FILE_STORE, normalize_common_name_file(dns_name))
     with open(cert_path, 'w') as cert_file:
         cert_file.write(certs['certificate'])
     intermediate_path = '{0}/{1}/DigiCertCA.crt'.format(config.FILE_STORE, normalize_common_name_file(dns_name))
     with open(intermediate_path, 'w') as int_file:
         int_file.write(certs['intermediate'])
-    # if 'root' in certs and certs['root']:
-    #     with open(intermediate_path, 'a') as int_file:
-    #         int_file.write(certs['intermediate'])
     return cert_path
 
 def get_dns_names_from_cert(cert_path):
