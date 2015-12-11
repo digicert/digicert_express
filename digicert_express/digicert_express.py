@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import getpass
 import config
 import sys
@@ -30,7 +31,9 @@ def main():
     if args.api_key:
         config.API_KEY = args.api_key
     cert_path = args.cert_path
-    private_key_file = args.key if os.path.isfile(args.key) else None
+    private_key_file = None
+    if args.key and os.path.isfile(args.key):
+        private_key_file = args.key
 
     # get platform class and check platform level dependencies
     platform = utils.determine_platform()
@@ -149,7 +152,6 @@ def main():
 
     # set the right file permissions so the certs can be read by apache
     apache_user = platform.get_apache_user()
-    logger.debug("Found Apache user {0}".format(apache_user))
     utils.set_permission(cert_path, apache_user, 644)
     utils.set_permission(private_key_file, apache_user, 644)
     utils.set_permission(intermediate_path, apache_user, 644)

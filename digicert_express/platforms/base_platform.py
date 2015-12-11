@@ -87,7 +87,9 @@ class BasePlatform():
 
     def get_apache_user(self):
         command = "ps aux | egrep '{0}' | grep -v `whoami` | grep -v root | head -n1 | awk '{{print $1}}'".format(self.APACHE_PROCESS_NAME)
-        return os.popen(command).read().strip()
+        apache_user = os.popen(command).read().strip()
+        self.logger.debug("Found Apache user {0}".format(apache_user))
+        return apache_user
 
     def include_ifmodule(self):
         return True

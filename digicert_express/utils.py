@@ -2,6 +2,7 @@ import loggers
 import platform
 import re
 import os
+import json
 import config
 import OpenSSL
 from httplib import HTTPSConnection
@@ -11,10 +12,12 @@ def find_user_config():
     """
     see if there is a custom configuration file in the user's home folder and update the config vars appropriately
     """
-    import os
-    import json
-    home = os.path.expanduser("~")
+    logger = loggers.get_logger(__name__)
+    username = os.environ["SUDO_USER"] if "SUDO_USER" in os.environ and os.environ["SUDO_USER"] else os.environ["USER"]
+    home = os.path.expanduser("~{0}/".format(username))
+    logger.info("Looking for user config in {0}".format(home))
     if os.path.isfile("{0}/.digicert_express".format(home)):
+        logger.info("Found user config")
         cfg = open("{0}/.digicert_express".format(home), "r").read()
         usercfg = json.loads(cfg)
         if 'SERVICES_URL' in usercfg and usercfg['SERVICES_URL']:
