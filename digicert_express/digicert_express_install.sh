@@ -32,7 +32,7 @@ dc_log "DigiCert Express Install Bootstrapper"
 dc_log
 
 CHECK_INSTALL_PACKAGES=""
-DIGICERT_PYTHON_PACKAGES="digicert-client digicert-express"
+DIGICERT_PYTHON_PACKAGES="digicert-express"
 CHECK_PYTHON_PACKAGES="python-augeas requests ndg-httpsclient pyasn1"
 touch ${LOG_FILE}
 start_date=`date`
@@ -106,7 +106,7 @@ then
         CHECK_PYTHON_PACKAGES="$CHECK_PYTHON_PACKAGES argparse"
     fi
 
-    SYMLINK_PATH="/usr/sbin/express_install"
+    SYMLINK_PATH="/usr/sbin/digicert_express"
 else
     APACHE_VERSION=`apachectl -v | grep 'Server version' | cut -d '/' -f 2 | cut -d ' ' -f 1`
     if [[ ! $os =~ "14.04" ]] || [ ${PYVARRAY[0]} -lt 2 ] || [ ${PYVARRAY[1]} -lt 7 ] || [[ ! $APACHE_VERSION =~ "2.4" ]]; then
@@ -139,7 +139,7 @@ else
         fi
     done
 
-    SYMLINK_DIR="/usr/local/bin/express_install"
+    SYMLINK_DIR="/usr/local/bin/digicert_express"
 fi
 
 # check for python dependency modules
@@ -212,15 +212,15 @@ if ! [[ "$INSTALL_PACKAGES" = "" && "$PYTHON_PACKAGES" = "" && $MISSING_DIGICERT
 fi
 
 # create a link so we can be run from the CLI
-LINK_PATH="`pip show digicert-express | grep Location | cut -d ':' -f 2 | tr -d '[[:space:]]'`/digicert_express/express_install.py"
+LINK_PATH="`pip show digicert-express | grep Location | cut -d ':' -f 2 | tr -d '[[:space:]]'`/digicert_express/digicert_express.py"
 if [ -e "$LINK_PATH" ]; then
     dc_log "Adding links to run DigiCert Express Install in ${LINK_DIR}"
     sudo ln -s "$LINK_PATH" "$SYMLINK_PATH"
     sudo chmod 755 "$LINK_PATH"
     dc_log ""
     dc_log "DigiCert Express Install has been installed on your system."
-    dc_log "As root, run 'express_install all' to install your certificate,"
-    dc_log "or 'express_install --help' for more information."
+    dc_log "As root, run 'digicert_express all' to install your certificate,"
+    dc_log "or 'digicert_express --help' for more information."
     dc_log ""
 fi
 
@@ -241,8 +241,8 @@ if ! [[ "$DOMAIN" = "" || "$ORDER" = "" ]]; then
     fi
 
     # run express install
-    dc_log "running: sudo express_install --cert_path \"$CERT_PATH\" --order_id \"$ORDER\" --sub_id \"$SUB\" --allow_dups \"$ALLOWDUPS\""
-    sudo express_install --cert_path "$CERT_PATH" --order_id "$ORDER" --sub_id "$SUB" --allow_dups "$ALLOWDUPS"
+    dc_log "running: sudo digicert_express --cert_path \"$CERT_PATH\" --order_id \"$ORDER\" --sub_id \"$SUB\" --allow_dups \"$ALLOWDUPS\""
+    sudo digicert_express --cert_path "$CERT_PATH" --order_id "$ORDER" --sub_id "$SUB" --allow_dups "$ALLOWDUPS"
 
 else
     dc_log "ERROR: You are missing your domain name or order id, please contact digicert support"
