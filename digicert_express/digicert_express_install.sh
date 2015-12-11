@@ -139,7 +139,7 @@ else
         fi
     done
 
-    SYMLINK_DIR="/usr/local/bin/digicert_express"
+    SYMLINK_PATH="/usr/local/bin/digicert_express"
 fi
 
 # check for python dependency modules
@@ -214,12 +214,12 @@ fi
 # create a link so we can be run from the CLI
 LINK_PATH="`pip show digicert-express | grep Location | cut -d ':' -f 2 | tr -d '[[:space:]]'`/digicert_express/digicert_express.py"
 if [ -e "$LINK_PATH" ]; then
-    dc_log "Adding links to run DigiCert Express Install in ${LINK_DIR}"
+    dc_log "Adding links to run DigiCert Express Install in ${SYMLINK_PATH}"
     sudo ln -s "$LINK_PATH" "$SYMLINK_PATH"
     sudo chmod 755 "$LINK_PATH"
     dc_log ""
     dc_log "DigiCert Express Install has been installed on your system."
-    dc_log "As root, run 'digicert_express all' to install your certificate,"
+    dc_log "As root, run 'digicert_express' to install your certificate,"
     dc_log "or 'digicert_express --help' for more information."
     dc_log ""
 fi
@@ -241,8 +241,8 @@ if ! [[ "$DOMAIN" = "" || "$ORDER" = "" ]]; then
     fi
 
     # run express install
-    dc_log "running: sudo digicert_express --cert_path \"$CERT_PATH\" --order_id \"$ORDER\" --sub_id \"$SUB\" --allow_dups \"$ALLOWDUPS\""
-    sudo digicert_express --cert_path "$CERT_PATH" --order_id "$ORDER" --sub_id "$SUB" --allow_dups "$ALLOWDUPS"
+    dc_log "running: sudo digicert_express --cert_path \"$CERT_PATH\" --order_id \"$ORDER\" --allow_dups \"$ALLOWDUPS\""
+    sudo digicert_express --cert_path "$CERT_PATH" --order_id "$ORDER" --allow_dups "$ALLOWDUPS"
 
 else
     dc_log "ERROR: You are missing your domain name or order id, please contact digicert support"
