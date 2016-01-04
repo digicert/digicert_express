@@ -152,7 +152,7 @@ def main():
     if not cert_path or not private_key_file:
         raise Exception("Something bad happened. We shouldn't have been able to get here")
 
-    intermediate_path = "{0}/{1}/DigiCertCA.crt".format(config.FILE_STORE, utils.normalize_common_name_file(vhost))
+    intermediate_path = "{0}/DigiCertCA.crt".format(cert_path.rpartition('/')[0])
 
     # set the right file permissions so the certs can be read by apache
     apache_user = platform.get_apache_user()
