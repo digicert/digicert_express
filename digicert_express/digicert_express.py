@@ -144,7 +144,7 @@ def main():
         if not private_key_matches_cert:
             private_key_file = None
         elif config.FILE_STORE not in private_key_file:
-            new_private_key_file = "{0}/{1}/{1}.key".format(config.FILE_STORE, utils.normalize_common_name_file(vhost))
+            new_private_key_file = cert_path.replace(".crt", ".key")
             shutil.copyfile(private_key_file, new_private_key_file)
             private_key_file = new_private_key_file
 
