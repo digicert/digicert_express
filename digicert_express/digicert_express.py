@@ -27,6 +27,10 @@ def main():
 
     args = parser.parse_args()
 
+    # this needs to happen after the arg parser is set up
+    if os.getuid() != 0:
+        raise BaseException("The Digicert Express Installer must be run as root.")
+
     order_id = args.order_id
     if args.api_key:
         config.API_KEY = args.api_key
@@ -391,8 +395,6 @@ def request_login():
 
 if __name__ == '__main__':
     try:
-        if os.getuid() != 0:
-            raise BaseException("The Digicert Express Installer must be run as root.")
         main()
         print 'Finished'
     except Exception as ex:
@@ -401,5 +403,7 @@ if __name__ == '__main__':
         print "\nError occurred: {0}".format(str(ex))
     except KeyboardInterrupt:
         print "\nProgram terminated by user"
+    except SystemExit as sysex:
+        pass
     except BaseException as bex:
         print str(bex)
