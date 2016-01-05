@@ -72,6 +72,9 @@ class BasePlatform():
 
         return success
 
+    def print_restart_apache_command(self):
+        self.logger.info("You will need to issue the following command for your SSL configuration to take affect: sudo {0}".format(self.APACHE_RESTART_COMMAND))
+
     # TODO maybe this doesn't need to be a separate function from the above...
     def check_for_apache_process(self):
         error = "Unknown error"

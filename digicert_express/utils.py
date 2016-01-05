@@ -58,6 +58,8 @@ def create_regex(text):
 # TODO should we add the order_id and sub_id to always make this unique?
 def save_certs(certs, dns_name):
     cert_path = '{0}/{1}/{1}.crt'.format(config.FILE_STORE, normalize_common_name_file(dns_name))
+    if not os.path.exists(os.path.dirname(cert_path)):
+        os.makedirs(os.path.dirname(cert_path))
     with open(cert_path, 'w') as cert_file:
         cert_file.write(certs['certificate'])
     intermediate_path = '{0}/{1}/DigiCertCA.crt'.format(config.FILE_STORE, normalize_common_name_file(dns_name))

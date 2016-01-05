@@ -16,13 +16,12 @@ readline.parse_and_bind('tab: complete')
 readline.parse_and_bind('set editing-mode vi')
 
 def main():
-    utils.find_user_config()
     # accept arguments
     parser = argparse.ArgumentParser(description='Download your certificate and secure your domain in one step')
     parser.add_argument("--order_id", action="store", help="DigiCert order ID for certificate")
     parser.add_argument("--cert_path", action="store", help="the path to the certificate file")
     parser.add_argument("--key", action="store", help="Path to private key file used to order certificate")
-    parser.add_argument("--api_key", action="store", help="Skip authentication step with a DigiCert API key")
+    parser.add_argument("--api_key", action="store", help="Skip authentication step with a DigiCert API key (for Cert Central accounts only)")
     parser.add_argument("--allow_dups", action="store", help="a flag to indicate whether the order type allows duplicates mostly for convenience")
 
     args = parser.parse_args()
@@ -30,6 +29,8 @@ def main():
     # this needs to happen after the arg parser is set up
     if os.getuid() != 0:
         raise BaseException("The Digicert Express Installer must be run as root.")
+
+    utils.find_user_config()
 
     order_id = args.order_id
     if args.api_key:
@@ -162,10 +163,12 @@ def main():
 
     aug.preinstall_setup(cert_path, intermediate_path, private_key_file)
     aug.install_certificate(vhost)
-    platform.restart_apache()
-
-    # verify that the existing site responds to https afterwards
-    utils.validate_ssl_success(vhost)
+    if raw_input("Your configuration has been updated. Would you like to restart the webserver? (Y/n)").lower().strip() == "y":
+        platform.restart_apache()
+        # verify that the existing site responds to https afterwards
+        utils.validate_ssl_success(vhost)
+    else:
+        platform.print_restart_apache_command()
 
 # TODO consider moving API request calls to their own file (api.py maybe?)
 def download_certificate(order):
