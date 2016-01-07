@@ -180,7 +180,7 @@ def download_certificate(order):
     check_credential()
     logger.debug("Downloading certificate")
     # TODO this distinction shouldn't exist here
-    if 'certificate' in order and order['certificate']['id']:  # for cert central accounts
+    if 'certificate' in order and 'id' in order['certificate'] and order['certificate']['id']:  # for cert central accounts
         r = Request(raw_file=True).get('/certificate/{0}/download/format/pem_all'.format(order['certificate']['id']))
     else:  # for mpki/retail accounts
         params = {"format_type": "pem_all"}
