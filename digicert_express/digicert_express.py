@@ -55,6 +55,7 @@ def main():
     # user manually passed the order id and no dns names were found
     if order_id and not dns_names:
         cert_path = None  # the cert_path was invalid
+        print "Attempting to get certificate by specified order ID"
         order = get_order(order_id)
         if len(order['certificate']['dns_names']) > 1:
             dns_names = order['certificate']['dns_names']
@@ -76,6 +77,7 @@ def main():
 
     # We should only go through this if block when the script is run without an order_id and cert_path
     if not dns_names:
+        print "Attempting to get orders matching selected vhost."
         orders = get_issued_orders(vhost)
         if not orders:
             # We could push them to order here :p

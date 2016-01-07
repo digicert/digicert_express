@@ -70,7 +70,7 @@ def save_certs(certs, dns_name):
 def get_dns_names_from_cert(cert_path):
     logger = loggers.get_logger(__name__)
     if not cert_path or not os.path.isfile(cert_path):
-        logger.info("Couldn't find valid certificate file at {0}".format(cert_path))
+        logger.info("Couldn't find valid certificate file: {0}".format(cert_path if cert_path else "No certificate provided"))
         return []
 
     dns_names = []
