@@ -113,7 +113,7 @@ def main():
         if not private_key_file:
             if args.allow_dups or (order and order['allow_duplicates'] == 1):
                 print "\033[1mDuplicates require permission to approve requests on this order.\033[0m"
-                if raw_input("Are you trying to install a duplicate certificate? (Y/n) ") == 'y':
+                if raw_input("Are you trying to install a duplicate certificate? (y/N) ").lower().strip() == 'y':
                     order = get_order(order_id) if not order else order
                     private_key_file, csr_file = utils.create_csr(dns_name=vhost, order=order)
                     dup_data = create_duplicate(order=order, csr_file=csr_file)
@@ -136,10 +136,10 @@ def main():
             pk_path = ""
             while not private_key_file and pk_path.strip().lower() != "q":
                 pk_path = raw_input("Please provide the path to the private key for this certificate: (q to quit) ")
-                if pk_path.strip().lower() == "q":
+                if pk_path.lower().strip() == "q":
                     raise Exception("Cannot install the certificate without a private key file")
                 if not os.path.isfile(pk_path):
-                    logger.info("The path {0} is not a valid file. Please try again.".format(pk_path))
+                    print "The path {0} is not a valid file. Please try again.".format(pk_path)
                     continue
                 private_key_file = pk_path
         if not cert_path:
@@ -167,7 +167,7 @@ def main():
 
     aug.preinstall_setup(cert_path, intermediate_path, private_key_file)
     aug.install_certificate(vhost)
-    if raw_input("Your configuration has been updated. Would you like to restart the webserver? (Y/n)").lower().strip() == "y":
+    if raw_input("Your configuration has been updated. Would you like to restart the webserver? (y/N) ").lower().strip() == "y":
         platform.restart_apache()
         # verify that the existing site responds to https afterwards
         utils.validate_ssl_success(vhost)
@@ -328,7 +328,7 @@ def select_vhost(hosts):
                 print "{0}.\t{1}".format(i, host)
                 i += 1
             response = raw_input("\nPlease choose a domain to secure from the list above (q to quit): ")
-            if response == 'q':
+            if response.lower().strip() == 'q':
                 raise Exception("No domain selected; aborting.")
             else:
                 try:
@@ -341,7 +341,7 @@ def select_vhost(hosts):
                     print ""
         return hosts[int(response)-1]
     elif hosts and len(hosts) == 1:
-        if raw_input("Continue with vhost {0}? (Y/n) ".format(hosts[0])) == 'n':
+        if raw_input("Continue with vhost {0}? (Y/n) ".format(hosts[0])).lower().strip() == 'n':
             raise Exception("User canceled; aborting.")
         return hosts[0]
     else:
@@ -356,7 +356,7 @@ def select_order(orders):
                 print "{0}.\t#{1} ({2}) Expires: {3}".format(i, order['id'], order['certificate']['common_name'], order['certificate']['valid_till'])
                 i += 1
             response = raw_input("\nPlease choose an order to secure this vhost with from the list above (q to quit): ")
-            if response == 'q':
+            if response.lower().strip() == 'q':
                 raise Exception("No order selected; aborting.")
             else:
                 try:
@@ -369,7 +369,7 @@ def select_order(orders):
                     print ""
         return orders[int(response)-1]
     elif orders and len(orders) == 1:
-        if raw_input("Continue with order #{0} ({1})? (Y/n) ".format(orders[0]['id'], orders[0]['certificate']['common_name'])) == 'n':
+        if raw_input("Continue with order #{0} ({1})? (Y/n) ".format(orders[0]['id'], orders[0]['certificate']['common_name'])).lower().strip() == 'n':
             raise Exception("User canceled; aborting.")
         return orders[0]
     else:
@@ -393,7 +393,7 @@ def request_login():
             logger.error('Server request failed. Unable to access API.')
             sys.exit()
         logger.debug('Authentication failed with username {0}'.format(username))
-        if raw_input('Authentication failed! Would you like to try again? [y/n] ') != 'n':
+        if raw_input('Authentication failed! Would you like to try again? [Y/n] ').lower().strip() != 'n':
             return request_login()
         else:
             logger.error("Authentication failed. Unable to continue.")
