@@ -120,7 +120,9 @@ def main():
                         duplicates = get_duplicates(order['id'])
                         if not duplicates:
                             raise Exception("Could not collect any duplicates for this order")
+                        # we need either the sub id or the certificate details from this specific duplicate on the order.
                         order['sub_id'] = duplicates['certificates'][0]['sub_id']
+                        order['certificate'] = duplicates['certificates'][0]
                     else:
                         order['sub_id'] = dup_data['sub_id']
                     if not order['sub_id']:
@@ -176,8 +178,8 @@ def download_certificate(order):
     check_credential()
     logger.debug("Downloading certificate")
     # TODO this distinction shouldn't exist here
-    if 'certificate_id' in order and order['certificate_id']:  # for cert central accounts
-        r = Request(raw_file=True).get('/certificate/{0}/download/format/pem_all'.format(order['id']))
+    if 'certificate' in order and order['certificate']['id']:  # for cert central accounts
+        r = Request(raw_file=True).get('/certificate/{0}/download/format/pem_all'.format(order['certificate']['id']))
     else:  # for mpki/retail accounts
         params = {"format_type": "pem_all"}
         if 'sub_id' in order and order['sub_id']:
