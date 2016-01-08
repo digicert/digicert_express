@@ -102,7 +102,12 @@ def create_csr(dns_name, order=None):
 
     subj = "/C=/ST=/L=/O=/CN={0}".format(dns_name)
     if order and 'organization' in order:
-        subj = "/C={0}/ST={1}/L={2}/O={3}/CN={4}".format(order['organization']['country'], order['organization']['state'].replace(",", ""), order['organization']['city'].replace(",", ""), order['organization']['name'].replace(",", ""), dns_name)
+        org = order['organization']
+        country = org['country'] if 'country' in org else ""
+        state = org['state'].replace(",", "") if 'state' in org else ""
+        city = org['city'].replace(",", "") if 'city' in org else ""
+        name = org['name'].replace(",", "") if 'name' in org else ""
+        subj = "/C={0}/ST={1}/L={2}/O={3}/CN={4}".format(country, state, city, name, dns_name)
     csr_cmd = 'openssl req -new -newkey rsa:2048 -nodes -out {0} -keyout {1} -subj "{2}" 2>/dev/null'.format(csr_file_name, key_file_name, subj)
 
     # run the command
