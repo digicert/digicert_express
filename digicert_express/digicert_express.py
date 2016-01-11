@@ -18,6 +18,7 @@ readline.parse_and_bind('set editing-mode vi')
 def main():
     # accept arguments
     parser = argparse.ArgumentParser(description='Download your certificate and secure your domain in one step')
+    parser.add_argument("-v", "--version", action="version", version='%(prog)s 1.0')
     parser.add_argument("--order_id", action="store", help="DigiCert order ID for certificate")
     parser.add_argument("--cert_path", action="store", help="the path to the certificate file")
     parser.add_argument("--key", action="store", help="Path to private key file used to order certificate")
@@ -289,9 +290,10 @@ def get_issued_orders(domain_filter=None):
         else:
             logger.error("Server returned an error condition: {0}".format(r.get_message()))
             sys.exit()
-    logger.debug("Collected order list with {0} orders".format(len(r.data['orders'])))
+    order_list = r.data['orders'] if 'orders' in r.data else []
+    logger.debug("Collected order list with {0} orders".format(len(order_list)))
     orders = []
-    for order in r.data['orders']:
+    for order in order_list:
         if domain_filter:
             if domain_filter in order['certificate']['dns_names']:
                 orders.append(order)
