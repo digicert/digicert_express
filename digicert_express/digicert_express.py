@@ -71,7 +71,7 @@ def main():
     if len(hosts) > 1:
         vhost = select_vhost(hosts)
     else:
-        if raw_input("The host {0} was found matching this certificate. Is this correct? (Y/n) ".format(hosts[0])).lower().strip() != "y":
+        if raw_input("The host {0} was found matching this certificate. Is this correct? (y/N) ".format(hosts[0])).lower().strip() != "y":
             raise Exception("No virtual hosts were found on this server that will work with your certificate")
         vhost = hosts[0]
 
