@@ -13,6 +13,8 @@ class BaseParser(object):
     """ Base parser object.
     """
     directives = dict()
+    aug = None
+    platform = None
 
     def __init__(self, platform, aug=None, autoload=True):
         self.logger = loggers.get_logger(__name__)
@@ -61,7 +63,7 @@ class BaseParser(object):
 
                 if include_file:
                     if include_file[0] != "/":
-                        include_file = os.path.join(os.path.dirname(apache_config[6:]), include_file)
+                        include_file = os.path.join(self.platform.httpd_root_dir, include_file)
 
                     if "*" not in include_file and include_file[-1] != "/":
                         self.aug.set("/augeas/load/Httpd/incl [last()+1]", include_file)

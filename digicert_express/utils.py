@@ -38,7 +38,7 @@ def determine_platform():
     logger = loggers.get_logger(__name__)
     distro_name = platform.linux_distribution()  # returns a tuple ('', '', '') (distroName, version, code name)
     logger.debug("Found platform: {0}".format(" : ".join(distro_name)))
-    if distro_name[0] == "CentOS":
+    if "centos" in distro_name[0].lower():
         return centos_platform.CentosPlatform()
     else:
         return ubuntu_platform.UbuntuPlatform()

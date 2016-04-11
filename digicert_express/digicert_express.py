@@ -82,7 +82,7 @@ def main():
         orders = get_issued_orders(vhost)
         if not orders:
             # We could push them to order here :p
-            raise Exception("No orders found matching that criteria")
+            raise Exception("No orders found matching the vhost you selected")
         order = select_order(orders)
         # TODO this right here?
         order = get_order(order['id'])
@@ -118,7 +118,7 @@ def main():
                     order = get_order(order_id) if not order else order
                     private_key_file, csr_file = utils.create_csr(dns_name=vhost, order=order)
                     dup_data = create_duplicate(order=order, csr_file=csr_file)
-                    if not 'sub_id' in dup_data:
+                    if 'sub_id' not in dup_data:
                         approve_request(dup_data['requests'][0]['id'])
                         duplicates = get_duplicates(order['id'])
                         if not duplicates:
@@ -138,7 +138,7 @@ def main():
             while not private_key_file and pk_path.strip().lower() != "q":
                 pk_path = raw_input("Please provide the path to the private key for this certificate: (q to quit) ")
                 if pk_path.lower().strip() == "q":
-                    raise Exception("Cannot install the certificate without a private key file")
+                    raise Exception("Cannot install this certificate without the private key used to generate the CSR")
                 if not os.path.isfile(pk_path):
                     print "The path {0} is not a valid file. Please try again.".format(pk_path)
                     continue
@@ -294,7 +294,7 @@ def get_issued_orders(domain_filter=None):
     logger.debug("Collected order list with {0} orders".format(len(order_list)))
     orders = []
     for order in order_list:
-        if domain_filter:
+        if domain_filter and order['product']['type'] != 'client_certificate':
             if domain_filter in order['certificate']['dns_names']:
                 orders.append(order)
             else:   # Check for wildcard matches

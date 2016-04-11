@@ -70,16 +70,21 @@ PYVARRAY=(${PY_VERSION//./ })
 if [[ $os == *"CentOS"* ]]
 then
     APACHE_VERSION=`apachectl -v | grep 'Server version' | cut -d '/' -f 2 | cut -d ' ' -f 1`
-    if [[ ! $os =~ "6.5" ]] || [ ${PYVARRAY[0]} -lt 2 ] || [ ${PYVARRAY[1]} -lt 6 ] || [[ ! $APACHE_VERSION =~ "2.2" ]]; then
+    if [ ${PYVARRAY[0]} = 2 ] && [ ${PYVARRAY[1]} -lt 6 ] || [[ ! $os =~ "6.5" ]] || [ ${PYVARRAY[0]} -lt 2 ] || [[ ! $APACHE_VERSION =~ "2.2" ]]; then
         echo ""
-        echo "The requirements to run DigiCert Express Install are Cent OS 6.5 with Python 2.6.x and Apache 2.2.x"
+        echo "DigiCert Express Install has been tested for Cent OS 6.5 with Python 2.6.x and Apache 2.2.x"
+        echo "** This message and the following prompt should change when QA has done their testing. Don't mark the JIRA as ready to deploy until this is done."
+        echo "** This is only temporary to allow QA to test different versions of CentOS."
         echo ""
-        exit
+        read -p "Do you wish to continue the install with your configuration (with no guarantees)? [Y/n] " REPLY
+            if [ "$REPLY" = "n" ]; then
+                exit
+            fi
     fi
 
     # Check to see if pip is installed just in case.
     pip -V >> /dev/null 2>&1
-    if [ $? -eq 127 ]
+    if [ $? -ne 0 ]
     then
         # If pip is not installed, check to see if we can use wget to install it.
         wget --version >> /dev/null 2>&1
@@ -111,9 +116,14 @@ else
     APACHE_VERSION=`apachectl -v | grep 'Server version' | cut -d '/' -f 2 | cut -d ' ' -f 1`
     if [[ ! $os =~ "14.04" ]] || [ ${PYVARRAY[0]} -lt 2 ] || [ ${PYVARRAY[1]} -lt 7 ] || [[ ! $APACHE_VERSION =~ "2.4" ]]; then
         echo ""
-        echo "The requirements to run DigiCert Express Install are Ubuntu 14.04 with Python 2.7.x and Apache 2.4.x"
+        echo "DigiCert Express Install has been tested for Ubuntu 14.04 with Python 2.7.x and Apache 2.4.x"
+        echo "** This message and the following prompt should change when QA has done their testing. Don't mark the JIRA as ready to deploy until this is done."
+        echo "** This is only temporary to allow QA to test different versions of CentOS."
         echo ""
-        exit
+        read -p "Do you wish to continue the install with your configuration (with no guarantees)? [Y/n] " REPLY
+        if [ "$REPLY" = "n" ]; then
+            exit
+        fi
     fi
 
     if [ "dpkg-query -W python-pip | awk {'print $1'} = """ ]; then

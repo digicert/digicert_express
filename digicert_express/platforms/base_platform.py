@@ -10,6 +10,8 @@ class BasePlatform():
     APACHE_PROCESS_NAME = 'apache2'
     DEPS = ['augeas-lenses', 'augeas-tools', 'libaugeas0', 'openssl', 'python-pip', 'python-openssl']
 
+    httpd_root_dir = None
+
     def __init__(self):
         self.logger = loggers.get_logger(__name__)
 
@@ -29,12 +31,14 @@ class BasePlatform():
                 # get the httpd root to find the server config file path
                 self.logger.info("Finding Apache configuration files...")
                 # ex:   -D HTTPD_ROOT="/etc/httpd"\n
-                httpd_root_dir = [cfg_item for cfg_item in apache_config.split('\n') if httpd_root_check in cfg_item][0].split('=')[1].replace('"', '')
-                if os.path.isdir(httpd_root_dir):
-                    server_config_file = os.path.join(httpd_root_dir, server_config_file)
+                self.httpd_root_dir = [cfg_item for cfg_item in apache_config.split('\n') if httpd_root_check in cfg_item][0].split('=')[1].replace('"', '')
+                if os.path.isdir(self.httpd_root_dir):
+                    server_config_file = os.path.join(self.httpd_root_dir, server_config_file)
 
             if os.path.isfile(server_config_file):
                 return server_config_file
+        else:
+            raise Exception("Unable to find {0} on server. Please ensure that apache is installed.".format(self.APACHE_SERVICE))
 
     def check_dependencies(self):
         try:
