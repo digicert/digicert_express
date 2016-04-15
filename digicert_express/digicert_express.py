@@ -280,7 +280,7 @@ def upload_csr(order_id, csr_file):
 def get_issued_orders(domain_filter=None):
     logger = loggers.get_logger(__name__)
     check_credential()
-    filters = '?filters[status]=issued'
+    filters = '?filters[status]=issued&filters[product_type]=ssl_certificate'
     r = Request().get('/order/certificate{0}'.format(filters))
     if r.has_error:
         # This is an unrecoverable error. We can't see the API for some reason

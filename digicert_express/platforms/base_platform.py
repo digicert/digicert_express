@@ -25,7 +25,10 @@ class BasePlatform():
             server_config_check = "SERVER_CONFIG_FILE="
             httpd_root_check = "HTTPD_ROOT="
             # ex:   -D SERVER_CONFIG_FILE="conf/httpd.conf"\n
-            server_config_file = [cfg_item for cfg_item in apache_config.split('\n') if server_config_check in cfg_item][0].split('=')[1].replace('"', '')
+            try:
+                server_config_file = [cfg_item for cfg_item in apache_config.split('\n') if server_config_check in cfg_item][0].split('=')[1].replace('"', '')
+            except:
+                raise Exception("Unable to read Apache configuration on server. Please ensure that apache is configured correctly.")
 
             if server_config_file[0] != "/":
                 # get the httpd root to find the server config file path
